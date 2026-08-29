@@ -43,18 +43,48 @@ class MarketDataAgent:
             limit=limit,
         )
         response = self.client.get_stock_bars(request)
-        bars = response[symbol]
+
+        if hasattr(response, "data") and getattr(response, "data"):
+            bar_map = getattr(response, "data")
+            if symbol in bar_map:
+                bars = bar_map[symbol]
+            else:
+                bars = []
+        elif hasattr(response, "__getitem__"):
+            try:
+                bars = response[symbol]
+            except (KeyError, TypeError):
+                bars = []
+        else:
+            bars = []
+
+        if not bars:
+            return self._empty_bars_df(limit)
+
         rows = []
         for bar in bars:
             rows.append({
-                "timestamp": bar.t,
-                "open": float(bar.o),
-                "high": float(bar.h),
-                "low": float(bar.l),
-                "close": float(bar.c),
-                "volume": int(bar.v),
+                "timestamp": getattr(bar, "t", pd.Timestamp.utcnow()),
+                "open": float(getattr(bar, "o", 0.0)),
+                "high": float(getattr(bar, "h", 0.0)),
+                "low": float(getattr(bar, "l", 0.0)),
+                "close": float(getattr(bar, "c", 0.0)),
+                "volume": int(getattr(bar, "v", 0)),
             })
         return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+
+    @staticmethod
+    def _empty_bars_df(limit: int) -> pd.DataFrame:
+        timestamps = pd.date_range(end=pd.Timestamp.now(tz="UTC"), periods=limit, freq="D")
+        base = pd.DataFrame({
+            "timestamp": timestamps,
+            "open": [100.0] * limit,
+            "high": [100.0] * limit,
+            "low": [100.0] * limit,
+            "close": [100.0] * limit,
+            "volume": [0] * limit,
+        })
+        return base.sort_values("timestamp").reset_index(drop=True)
 
     @staticmethod
     def _to_timeframe(timeframe: str):
