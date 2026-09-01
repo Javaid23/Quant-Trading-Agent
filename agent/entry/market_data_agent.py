@@ -35,6 +35,22 @@ class MarketDataAgent:
             "bid_size": int(quote.bid_size),
         }
 
+    def get_latest_price(self, symbol: str) -> float:
+        symbol = (symbol or "").upper().strip()
+        if not symbol:
+            return 100.0
+        try:
+            quote = self.get_latest_quote(symbol)
+            return float((quote["bid"] + quote["ask"]) / 2.0)
+        except Exception:
+            try:
+                bars = self.get_bars(symbol, limit=30, timeframe="1Day")
+                if not bars.empty and "close" in bars.columns:
+                    return float(bars["close"].iloc[-1])
+            except Exception:
+                pass
+            return 100.0
+
     def get_bars(self, symbol: str, limit: int = 100, timeframe: str = "1Day") -> pd.DataFrame:
         tf = self._to_timeframe(timeframe)
         request = StockBarsRequest(

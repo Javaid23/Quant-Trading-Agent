@@ -132,7 +132,7 @@ class StrategySelector:
         base_price = float(current_price) if current_price is not None else 100.0
         return self._build_fallback_option_symbol(symbol, option_type, strike=base_price)
 
-    def select_entry_strategy(self, signal: str, symbol: str) -> Dict[str, Any]:
+    def select_entry_strategy(self, signal: str, symbol: str, current_price: float | None = None) -> Dict[str, Any]:
         signal = (signal or "neutral").lower()
         if signal == "bullish":
             option_type = "call"
@@ -149,7 +149,7 @@ class StrategySelector:
                 "option_symbol": None,
             }
 
-        option_symbol = self.get_option_symbol_for_signal(symbol, option_type)
+        option_symbol = self.get_option_symbol_for_signal(symbol, option_type, current_price=current_price)
         return {
             "symbol": symbol,
             "direction": "long" if signal == "bullish" else "short",

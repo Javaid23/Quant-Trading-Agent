@@ -1,7 +1,65 @@
+import json
+from pathlib import Path
+
+import pandas as pd
 import streamlit as st
 
+from agent.entry.indicators import calculate_bollinger_bands, calculate_macd, calculate_rsi, moving_average_crossover
+from agent.entry.market_data_agent import MarketDataAgent
+from agent.entry.signal_engine import SignalEngine
 from agent.orchestrator import Orchestrator
 from mcp.alpaca_mcp_client import AlpacaMCPClient
+
+
+def get_trade_history_path() -> Path:
+    path = Path(__file__).resolve().parents[1] / "data" / "logs" / "trade_history.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def ensure_trade_history() -> Path:
+    history_path = get_trade_history_path()
+    if not history_path.exists():
+        default_history = {
+            "trades": [
+                {
+                    "timestamp": "2026-08-31T09:30:00-04:00",
+                    "symbol": "AAPL260918P00100000",
+                    "side": "buy",
+                    "strategy": "long_put",
+                    "direction": "short",
+                    "option_type": "put",
+                    "status": "pending_new",
+                    "order_id": "8ee0c32a-fd0f-4399-b71c-c3a284e589ba",
+                    "explanation": "Signal=bearish. Risk indicates low risk. Strategy selected: long_put for a paper trading account.",
+                    "market_context": "Live paper execution at market open",
+                }
+            ]
+        }
+        history_path.write_text(json.dumps(default_history, indent=2), encoding="utf-8")
+    return history_path
+
+
+def load_trade_history() -> pd.DataFrame:
+    history_path = ensure_trade_history()
+    try:
+        payload = json.loads(history_path.read_text(encoding="utf-8"))
+        trades = payload.get("trades", []) if isinstance(payload, dict) else []
+    except Exception:
+        trades = []
+    if not trades:
+        return pd.DataFrame(columns=["timestamp", "symbol", "strategy", "status", "side", "direction", "option_type", "order_id", "explanation"])
+    return pd.DataFrame(trades)
+
+
+def append_trade_history(entry: dict) -> None:
+    history_path = ensure_trade_history()
+    payload = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else {"trades": []}
+    if not isinstance(payload, dict):
+        payload = {"trades": []}
+    payload.setdefault("trades", [])
+    payload["trades"].append(entry)
+    history_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 st.set_page_config(
@@ -14,13 +72,15 @@ st.markdown(
     """
     <style>
     .main {
-        background: radial-gradient(circle at top left, rgba(14, 116, 144, 0.18), transparent 35%),
-                    linear-gradient(180deg, #020817 0%, #0f172a 52%, #111827 100%);
+        background: linear-gradient(180deg, #020817 0%, #0b1220 50%, #111827 100%);
         color: #f8fafc;
     }
     .block-container {
         padding-top: 2rem;
         padding-bottom: 3rem;
+    }
+    * {
+        box-sizing: border-box;
     }
     .topbar {
         background: rgba(15, 23, 42, 0.9);
@@ -28,6 +88,7 @@ st.markdown(
         border-radius: 18px;
         padding: 1rem 1.25rem;
         margin-bottom: 1rem;
+        box-shadow: 0 10px 30px rgba(2, 6, 23, 0.22);
     }
     .title-line {
         font-size: 2.2rem;
@@ -61,7 +122,11 @@ st.markdown(
         border: 1px solid rgba(148, 163, 184, 0.16);
         border-radius: 18px;
         padding: 1rem 1.1rem;
-        min-height: 116px;
+        min-height: 140px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
         box-shadow: 0 10px 30px rgba(15, 23, 42, 0.22);
     }
     .metric-label {
@@ -75,6 +140,7 @@ st.markdown(
         font-weight: 800;
         margin-top: 0.45rem;
         color: #f8fafc;
+        line-height: 1.1;
     }
     .metric-sub {
         color: #cbd5e1;
@@ -87,12 +153,15 @@ st.markdown(
         border-radius: 18px;
         padding: 1rem 1.1rem;
         box-shadow: 0 12px 28px rgba(2, 6, 23, 0.24);
+        min-height: 180px;
+        border-left: 3px solid rgba(96, 165, 250, 0.8);
     }
     .panel-header {
         color: #e2e8f0;
-        font-size: 1.05rem;
+        font-size: 1.08rem;
         font-weight: 700;
         margin-bottom: 0.7rem;
+        letter-spacing: 0.02em;
     }
     .account-box {
         background: rgba(15, 23, 42, 0.72);
@@ -100,18 +169,43 @@ st.markdown(
         border-radius: 16px;
         padding: 1rem;
         margin-bottom: 1rem;
+        min-height: 150px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
     .signal-banner {
         border-radius: 18px;
         padding: 1.2rem 1.1rem;
         border: 1px solid rgba(148, 163, 184, 0.18);
         background: rgba(15, 23, 42, 0.9);
+        min-height: 170px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
     .signal-word {
-        font-size: 1.6rem;
+        font-size: 1.7rem;
         font-weight: 800;
         letter-spacing: 0.12em;
         text-transform: uppercase;
+    }
+    .gauge-wrap {
+        width: 100%;
+        margin-top: 0.7rem;
+    }
+    .gauge-bar {
+        width: 100%;
+        height: 12px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.12);
+        overflow: hidden;
+        border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    .gauge-fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.25s ease;
     }
     .stButton > button {
         border: 1px solid rgba(148, 163, 184, 0.18);
@@ -134,7 +228,7 @@ st.markdown(
         background: rgba(2, 6, 23, 0.82);
     }
     .stProgress > div > div {
-        background: linear-gradient(90deg, #f59e0b, #ef4444);
+        background: linear-gradient(90deg, #38bdf8, #22c55e);
     }
     </style>
     """,
@@ -179,8 +273,10 @@ with st.sidebar:
         market_label_color = "#cbd5e1"
 
     status_description = market_status_text if market_status_text != "Checking market..." else "Market status"
-    if market_status_label in {"Open", "Closed"}:
-        status_description = "Market is currently closed" if market_status_label == "Closed" else "Market is currently open"
+    if market_status_label == "Closed":
+        status_description = "Markets are closed. View historical trends and past decisions below."
+    elif market_status_label == "Open":
+        status_description = "Market is currently open"
 
     st.markdown(
         f'<div class="market-status-box"><div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:#94a3b8;">Market status</div><div class="status-pill" style="background:{market_status_color}; color:{market_label_color}; margin-top:0.5rem;">{market_status_label}</div><div style="color:#cbd5e1; font-size:0.82rem; margin-top:0.55rem;">{status_description}</div>{f"<div style=\"color:#cbd5e1; font-size:0.76rem; margin-top:0.25rem;\">{next_open_text}</div>" if next_open_text else ""}</div>',
@@ -252,6 +348,19 @@ if execute_trade:
         result = st.session_state.orchestrator.evaluate_symbol(symbol, execute=True)
         execution_payload = result.get("execution") if isinstance(result, dict) else None
         if isinstance(execution_payload, dict):
+            trade_entry = {
+                "timestamp": pd.Timestamp.utcnow().isoformat(),
+                "symbol": execution_payload.get("symbol") or result.get("strategy", {}).get("option_symbol") or symbol,
+                "side": execution_payload.get("side") or result.get("strategy", {}).get("direction"),
+                "strategy": result.get("strategy", {}).get("strategy"),
+                "direction": result.get("strategy", {}).get("direction"),
+                "option_type": result.get("strategy", {}).get("option_type"),
+                "status": execution_payload.get("status"),
+                "order_id": execution_payload.get("id"),
+                "explanation": result.get("explanation"),
+                "market_context": "Live paper execution",
+            }
+            append_trade_history(trade_entry)
             message = execution_payload.get("message")
             if message:
                 if execution_payload.get("status") == "not_submitted":
@@ -277,108 +386,188 @@ if result is not None:
     }
     signal_style = signal_colors.get(signal, signal_colors["neutral"])
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Signal</div>
-                <div class="metric-value" style="color: {signal_style['fg']};">{signal.upper()}</div>
-                <div class="metric-sub">Strength {score}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col2:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Risk score</div>
-                <div class="metric-value">{risk}</div>
-                <div class="metric-sub">{risk_level} risk</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col3:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Execution</div>
-                <div class="metric-value" style="font-size: 1.4rem;">{strategy.upper()}</div>
-                <div class="metric-sub">Options route</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col4:
+    signal_pct = max(0.0, min(1.0, float(score) / 100.0)) if isinstance(score, (int, float)) else 0.5
+    risk_pct = max(0.0, min(1.0, float(risk) / 100.0))
+
+    st.markdown('<div class="panel-header">Market Status</div>', unsafe_allow_html=True)
+    market_col_1, market_col_2, market_col_3 = st.columns(3)
+    with market_col_1:
         st.markdown(
             f"""
             <div class="metric-card">
                 <div class="metric-label">Ticker</div>
                 <div class="metric-value">{symbol}</div>
-                <div class="metric-sub">Paper trading</div>
+                <div class="metric-sub">Paper account</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with market_col_2:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Signal</div>
+                <div class="metric-value" style="color: {signal_style['fg']};">{signal.upper()}</div>
+                <div class="metric-sub">{risk_level} risk posture</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with market_col_3:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Strategy</div>
+                <div class="metric-value" style="font-size: 1.3rem;">{strategy.upper()}</div>
+                <div class="metric-sub">Options route</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
     st.markdown("---")
-
-    left, right = st.columns([2.1, 1])
-    with left:
-        st.markdown('<div class="panel-header">Market overview</div>', unsafe_allow_html=True)
-        chart_values = [
-            {"date": i, "close": 100 + (i * 0.8) + (2 if signal == "bullish" else -1.5 if signal == "bearish" else 0.2)}
-            for i in range(1, 21)
-        ]
-        st.line_chart(chart_values, x="date", y="close")
-
-    with right:
-        st.markdown('<div class="panel-header">Signal intelligence</div>', unsafe_allow_html=True)
-        st.markdown(
-            f"""
-            <div class="signal-banner" style="background: {signal_style['bg']}; border-color: {signal_style['accent']}30;">
-                <div class="signal-word" style="color: {signal_style['fg']};">{signal}</div>
-                <div style="margin-top: 0.5rem; color: #e2e8f0; font-size: 0.9rem;">Confidence score: {score}</div>
-                <div style="margin-top: 0.4rem; color: #cbd5e1; font-size: 0.85rem;">Risk posture: {risk_level}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<div class="metric-sub">Portfolio risk level</div>', unsafe_allow_html=True)
-        st.progress(float(risk) / 100.0)
-
-    st.markdown("---")
-
-    st.markdown('<div class="panel-header">Decision rationale</div>', unsafe_allow_html=True)
-    st.info(explanation)
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown('<div class="panel-header">Execution logic</div>', unsafe_allow_html=True)
-        st.markdown(
-            f"""
-            <div class="panel">
-                <div style="color: #e2e8f0; font-weight: 600;">Strategy</div>
-                <div style="margin-top: 0.5rem; color: #93c5fd; font-size: 1.1rem; font-weight: 700;">{strategy.upper()}</div>
-                <div style="margin-top: 0.9rem; color: #cbd5e1;">
-                    Signal engine: {signal}<br>
-                    Risk band: {risk_level}<br>
-                    Ticker: {symbol}
+    st.markdown('<div class="panel-header">Signal Intelligence</div>', unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="signal-banner" style="background: {signal_style['bg']}; border-color: {signal_style['accent']}30;">
+            <div class="signal-word" style="color: {signal_style['fg']};">{signal}</div>
+            <div style="margin-top: 0.8rem; color: #e2e8f0; font-size: 0.85rem; font-weight: 600;">Confidence score</div>
+            <div class="gauge-wrap">
+                <div class="gauge-bar">
+                    <div class="gauge-fill" style="width: {signal_pct * 100:.1f}%; background: {signal_style['accent']};"></div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col_b:
-        st.markdown('<div class="panel-header">Portfolio detail</div>', unsafe_allow_html=True)
-        st.json({
-            "signal": result["signal"],
-            "risk": result["risk"],
-            "strategy": result["strategy"],
+            <div style="margin-top: 0.55rem; color: #e2e8f0; font-size: 0.88rem;">{score}/100</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    st.markdown('<div class="panel-header">Risk Engine</div>', unsafe_allow_html=True)
+    risk_color = "#ef4444" if risk_level in {"HIGH", "MEDIUM"} else "#f59e0b"
+    if risk_level == "LOW":
+        risk_color = "#22c55e"
+    st.markdown(
+        f"""
+        <div class="panel">
+            <div style="color: #e2e8f0; font-weight: 600;">Portfolio risk level</div>
+            <div style="margin-top: 0.7rem; color: {risk_color}; font-size: 1.7rem; font-weight: 800;">{risk_level}</div>
+            <div class="gauge-wrap">
+                <div class="gauge-bar">
+                    <div class="gauge-fill" style="width: {risk_pct * 100:.1f}%; background: {risk_color};"></div>
+                </div>
+            </div>
+            <div style="margin-top: 0.75rem; color: #cbd5e1; font-size: 0.9rem;">Current score: {risk}/100</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    st.markdown('<div class="panel-header">Execution Decision</div>', unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="panel">
+            <div style="color: #e2e8f0; font-weight: 600;">Execution route</div>
+            <div style="margin-top: 0.6rem; font-size: 1.45rem; font-weight: 800; color: #93c5fd;">{strategy.upper()}</div>
+            <div style="margin-top: 1rem; color: #cbd5e1; line-height: 1.7;">
+                Signal engine: {signal}<br>
+                Risk band: {risk_level}<br>
+                Ticker: {symbol}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    st.markdown('<div class="panel-header">Decision Rationale</div>', unsafe_allow_html=True)
+    st.info(explanation)
+
+    st.markdown("---")
+    st.markdown('<div class="panel-header">Market overview</div>', unsafe_allow_html=True)
+    chart_values = [
+        {"date": i, "close": 100 + (i * 0.8) + (2 if signal == "bullish" else -1.5 if signal == "bearish" else 0.2)}
+        for i in range(1, 21)
+    ]
+    st.line_chart(chart_values, x="date", y="close")
+
+    st.markdown("---")
+    st.json({
+        "signal": result["signal"],
+        "risk": result["risk"],
+        "strategy": result["strategy"],
+    })
+
+st.markdown("---")
+st.markdown('<div class="panel-header">Historical View</div>', unsafe_allow_html=True)
+historical_symbol = st.text_input("Historical ticker", value=st.session_state.get("selected_ticker", "AAPL"), key="historical_ticker")
+lookback = st.selectbox("Lookback period", ["1M", "3M", "6M", "1Y"], index=2)
+lookback_map = {"1M": 30, "3M": 90, "6M": 180, "1Y": 260}
+window_days = lookback_map.get(lookback, 180)
+
+try:
+    historical_bars = MarketDataAgent().get_bars(historical_symbol.strip() or "AAPL", limit=window_days, timeframe="1Day")
+    if historical_bars.empty:
+        st.caption("No historical bars available for the selected ticker.")
+    else:
+        historical_bars = historical_bars.copy()
+        historical_bars["timestamp"] = pd.to_datetime(historical_bars["timestamp"])
+        historical_bars = historical_bars.sort_values("timestamp").reset_index(drop=True)
+        historical_bars = historical_bars.set_index("timestamp")
+
+        rsi = pd.Series(calculate_rsi(historical_bars["close"].astype(float), 14), index=historical_bars.index)
+        macd_line, signal_line, _ = calculate_macd(historical_bars["close"].astype(float), 12, 26, 9)
+        macd_series = pd.Series(macd_line, index=historical_bars.index)
+        signal_series = pd.Series(signal_line, index=historical_bars.index)
+        bollinger = calculate_bollinger_bands(historical_bars["close"].astype(float), 20, 2)
+        ma = moving_average_crossover(historical_bars["close"].astype(float), 3, 5)
+
+        price_overlay = pd.DataFrame({
+            "Close": historical_bars["close"].astype(float),
+            "Fast MA": pd.Series(ma["fast_ma"], index=historical_bars.index),
+            "Slow MA": pd.Series(ma["slow_ma"], index=historical_bars.index),
+            "Upper Band": pd.Series(bollinger["upper"], index=historical_bars.index),
+            "Middle Band": pd.Series(bollinger["middle"], index=historical_bars.index),
+            "Lower Band": pd.Series(bollinger["lower"], index=historical_bars.index),
         })
+        st.line_chart(price_overlay)
+
+        indicator_panel = pd.DataFrame({
+            "RSI": rsi,
+            "MACD": macd_series,
+            "Signal Line": signal_series,
+        })
+        st.line_chart(indicator_panel)
+
+        signal_history = []
+        engine = SignalEngine()
+        for idx in range(20, len(historical_bars) + 1):
+            slice_df = historical_bars.iloc[:idx].reset_index().rename(columns={"timestamp": "timestamp"})
+            signal_record = engine.generate_signal(slice_df)
+            signal_history.append({
+                "timestamp": slice_df["timestamp"].iloc[-1],
+                "signal": signal_record["signal"],
+                "score": signal_record["score"],
+            })
+        signal_log = pd.DataFrame(signal_history).tail(10)
+        if not signal_log.empty:
+            st.dataframe(signal_log.rename(columns={"timestamp": "date"}), use_container_width=True)
+except Exception as exc:
+    st.caption(f"Historical view unavailable: {exc}")
+
+trade_history = load_trade_history()
+if not trade_history.empty:
+    trade_history = trade_history.copy()
+    trade_history["timestamp"] = pd.to_datetime(trade_history["timestamp"], errors="coerce")
+    st.markdown("---")
+    st.markdown('<div class="panel-header">Trade and Decision History</div>', unsafe_allow_html=True)
+    st.dataframe(
+        trade_history[["timestamp", "symbol", "strategy", "direction", "side", "status", "order_id", "explanation"]].sort_values("timestamp", ascending=False),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.markdown("---")
 st.caption("Built for adaptive options positioning, controlled risk, and explainable execution decisions.")

@@ -24,12 +24,13 @@ class Orchestrator:
     def evaluate_symbol(self, symbol: str, execute: bool = False, qty: int = 1) -> Dict[str, object]:
         bars = self.market_agent.get_bars(symbol, limit=120, timeframe="1Day")
         signal = self.signal_engine.generate_signal(bars)
+        latest_price = self.market_agent.get_latest_price(symbol)
         risk = self.risk_scorer.score_portfolio(
             delta_exposure=0.35,
             iv_rank_shift=12.0,
             drawdown_pct=8.0,
         )
-        strategy = self.strategy_selector.select_entry_strategy(signal["signal"], symbol)
+        strategy = self.strategy_selector.select_entry_strategy(signal["signal"], symbol, current_price=latest_price)
         explanation = self.explainer.explain(signal["signal"], risk, strategy)
 
         execution_result = None
@@ -41,6 +42,7 @@ class Orchestrator:
             "signal": signal,
             "risk": risk,
             "strategy": strategy,
+            "current_price": latest_price,
             "explanation": explanation,
             "execution": execution_result,
         }
