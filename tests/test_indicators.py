@@ -1,11 +1,15 @@
 import pandas as pd
 
+import numpy as np
+
 from agent.entry.indicators import (
     calculate_bollinger_bands,
     calculate_macd,
     calculate_rsi,
     evaluate_market_signal,
     moving_average_crossover,
+    realized_volatility,
+    volatility_rank,
 )
 
 
@@ -55,3 +59,23 @@ def test_signal_evaluation_returns_known_direction():
 
     assert evaluate_market_signal(bullish) == "bullish"
     assert evaluate_market_signal(bearish) == "bearish"
+
+
+def test_volatility_rank_is_between_0_and_1_and_flags_recent_turbulence():
+    calm = list(np.linspace(100, 101, 200))
+    volatile = list(100 + np.cumsum(np.tile([5.0, -5.0], 25)))
+    rank = volatility_rank(calm + volatile, short_window=20, lookback=252)
+
+    assert 0.0 <= rank <= 1.0
+    assert rank > 0.5
+
+
+def test_volatility_rank_returns_zero_when_history_too_short():
+    assert volatility_rank([100, 101, 102], short_window=20) == 0.0
+
+
+def test_realized_volatility_is_positive_for_moving_series():
+    prices = list(100 + np.cumsum(np.tile([1.0, -1.0], 30)))
+    vol = realized_volatility(prices, window=20)
+
+    assert vol > 0

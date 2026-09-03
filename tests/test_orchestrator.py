@@ -185,11 +185,26 @@ def test_orchestrator_execute_true_returns_clear_error_when_execution_unavailabl
     assert "not configured" in result["execution"]["message"]
 
 
-def test_orchestrator_neutral_signal_yields_zero_iv_shift(monkeypatch):
+def test_orchestrator_volatility_rank_passes_through_and_clamps(monkeypatch):
     orchestrator = Orchestrator()
     monkeypatch.setattr(orchestrator, "_get_open_positions", lambda: [])
     orchestrator.execution_agent.client = SimpleNamespace(get_account=lambda: SimpleNamespace(equity=1000.0))
 
-    risk_inputs = orchestrator._compute_live_risk_inputs(0.0)
+    assert orchestrator._compute_live_risk_inputs(0.0)["volatility"] == 0.0
+    assert orchestrator._compute_live_risk_inputs(0.6)["volatility"] == 0.6
+    # Out-of-range inputs are clamped into [0, 1].
+    assert orchestrator._compute_live_risk_inputs(1.5)["volatility"] == 1.0
 
-    assert risk_inputs["iv_rank_shift"] == 0.0
+
+def test_orchestrator_extract_volatility_rank_from_bars():
+    import numpy as np
+
+    # A price path with a calm first half and a volatile recent stretch should rank high.
+    calm = list(np.linspace(100, 102, 200))
+    volatile = list(100 + np.cumsum(np.tile([6.0, -6.0], 20)))
+    bars = pd.DataFrame({"close": calm + volatile})
+
+    rank = Orchestrator._extract_volatility_rank(bars)
+
+    assert 0.0 <= rank <= 1.0
+    assert rank > 0.5

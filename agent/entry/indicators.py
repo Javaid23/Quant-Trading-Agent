@@ -78,6 +78,44 @@ def moving_average_crossover(
     }
 
 
+def realized_volatility(closes: List[float] | np.ndarray | pd.Series, window: int = 20) -> float:
+    """Annualized realized volatility from the most recent `window` daily log returns."""
+    series = pd.Series(closes, dtype=float).dropna()
+    if len(series) < window + 1:
+        return float("nan")
+    log_returns = np.log(series / series.shift(1)).dropna()
+    if len(log_returns) < window:
+        return float("nan")
+    vol = log_returns.rolling(window).std(ddof=0).iloc[-1] * np.sqrt(252)
+    return float(vol) if pd.notna(vol) else float("nan")
+
+
+def volatility_rank(
+    closes: List[float] | np.ndarray | pd.Series,
+    short_window: int = 20,
+    lookback: int = 252,
+) -> float:
+    """Where the current short-window realized volatility sits within its recent range (0..1).
+
+    This is a real, price-derived stand-in for option IV rank: 0 means the name is at the calm end of
+    its recent volatility range, 1 means the top. Returns 0.0 when there is not enough history to judge,
+    so unmeasurable names do not inflate the risk score.
+    """
+    series = pd.Series(closes, dtype=float).dropna()
+    if len(series) < short_window + 2:
+        return 0.0
+    log_returns = np.log(series / series.shift(1)).dropna()
+    rolling_vol = log_returns.rolling(short_window).std(ddof=0).dropna()
+    if rolling_vol.empty:
+        return 0.0
+    window = rolling_vol.iloc[-lookback:] if len(rolling_vol) > lookback else rolling_vol
+    current = rolling_vol.iloc[-1]
+    if len(window) < 2 or float(window.max()) == float(window.min()):
+        return 0.0
+    rank = float((window <= current).mean())
+    return max(0.0, min(1.0, rank))
+
+
 def evaluate_market_signal(closes: List[float] | np.ndarray | pd.Series) -> str:
     """Simple directional heuristic based on the latest close trend."""
     series = pd.Series(closes, dtype=float)

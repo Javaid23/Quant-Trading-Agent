@@ -14,6 +14,9 @@ LEGACY_STALE_POSITIONS = {
 }
 # Legacy stale positions from the pre-fix pricing bug are intentionally excluded from live risk scoring.
 # These were artifacts of old stale $0.03-type entries and are not representative of current strategy risk.
+import pandas as pd
+
+from agent.entry.indicators import volatility_rank
 from agent.entry.market_data_agent import MarketDataAgent
 from agent.entry.signal_engine import SignalEngine
 from agent.execution_agent import ExecutionAgent
@@ -63,7 +66,28 @@ class Orchestrator:
             return "short"
         return "neutral"
 
-    def _compute_live_risk_inputs(self, signal_score: float) -> Dict[str, float]:
+    @staticmethod
+    def _extract_volatility_rank(bars: Any) -> float:
+        """Compute the volatility rank (0..1) for the symbol from its historical bars.
+
+        Handles both a bars DataFrame and the list-of-dicts shape used in tests; returns 0.0 when
+        closes cannot be extracted so an unmeasurable name never inflates the risk score.
+        """
+        try:
+            if hasattr(bars, "columns") and "close" in getattr(bars, "columns", []):
+                close_values = pd.to_numeric(bars["close"], errors="coerce").dropna()
+            elif isinstance(bars, (list, tuple)):
+                close_values = pd.Series(
+                    [row.get("close") for row in bars if isinstance(row, dict) and row.get("close") is not None],
+                    dtype=float,
+                )
+            else:
+                return 0.0
+            return volatility_rank(close_values)
+        except Exception:
+            return 0.0
+
+    def _compute_live_risk_inputs(self, volatility_rank: float) -> Dict[str, float]:
         positions = list(self._get_open_positions())
         account = None
         if self.execution_agent is not None and self.execution_agent.client is not None:
@@ -129,13 +153,13 @@ class Orchestrator:
         # the basis is valid. This avoids division by near-zero values from older bad positions.
         drawdown_pct = max(0.0, worst_negative_unrealized_plpc * 100.0)
 
-        # Simplified placeholder until we track real IV rank history in the account.
-        # The signal engine is centered around 0, so the proxy should be zero for neutral signals and grow with conviction.
-        iv_rank_shift = max(0.0, abs(float(signal_score)) / 10.0)
+        # Real, price-derived volatility rank (0..1) for the symbol under evaluation, computed by the
+        # caller from historical bars. Replaces the earlier placeholder that was derived from the signal.
+        volatility = max(0.0, min(1.0, float(volatility_rank)))
 
         return {
             "delta_exposure": float(delta_exposure),
-            "iv_rank_shift": float(iv_rank_shift),
+            "volatility": float(volatility),
             "drawdown_pct": float(drawdown_pct),
         }
 
@@ -214,10 +238,11 @@ class Orchestrator:
 
         latest_price = self.market_agent.get_latest_price(symbol)
 
-        risk_inputs = self._compute_live_risk_inputs(signal.get("score", 50.0))
+        volatility_rank_value = self._extract_volatility_rank(bars)
+        risk_inputs = self._compute_live_risk_inputs(volatility_rank_value)
         risk = self.risk_scorer.score_portfolio(
             delta_exposure=risk_inputs["delta_exposure"],
-            iv_rank_shift=risk_inputs["iv_rank_shift"],
+            volatility=risk_inputs["volatility"],
             drawdown_pct=risk_inputs["drawdown_pct"],
         )
 
