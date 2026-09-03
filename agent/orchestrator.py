@@ -245,6 +245,55 @@ class Orchestrator:
 
         return summary
 
+    def scan_watchlist(self, symbols: Iterable[str]) -> list:
+        """Fast signal+risk snapshot across many symbols for the dashboard scan.
+
+        Deliberately lightweight: it batches the price fetch into one request, fetches positions/account
+        once, and skips the expensive per-symbol option-chain resolution and LLM explanation that
+        evaluate_symbol does. Returns one row per symbol with signal, score, strategy name, and risk.
+        """
+        symbols = [str(s).upper().strip() for s in symbols if s]
+        bars_by_symbol = {}
+        try:
+            bars_by_symbol = self.market_agent.get_bars_multi(symbols, limit=120, timeframe="1Day")
+        except Exception:
+            bars_by_symbol = {}
+
+        open_positions = list(self._get_open_positions())
+        equity = self._get_account_equity()
+
+        rows = []
+        for symbol in symbols:
+            bars = bars_by_symbol.get(symbol)
+            is_empty = bars is None or (hasattr(bars, "empty") and bool(bars.empty))
+            if is_empty:
+                rows.append({"symbol": symbol, "status": "no_data", "signal": "no_data", "score": None, "strategy": "hold", "risk": None, "risk_level": None})
+                continue
+
+            signal = self.signal_engine.generate_signal(bars)
+            if signal.get("signal") in {"no_data", "no data available"}:
+                rows.append({"symbol": symbol, "status": "no_data", "signal": "no_data", "score": None, "strategy": "hold", "risk": None, "risk_level": None})
+                continue
+
+            volatility = self._extract_volatility_rank(bars)
+            symbol_positions = self._filter_positions_for_symbol(open_positions, symbol)
+            inputs = self._risk_inputs_from_positions(symbol_positions, equity, volatility)
+            risk = self.risk_scorer.score_portfolio(
+                capital_at_risk=inputs["capital_at_risk"], volatility=inputs["volatility"], drawdown_pct=inputs["drawdown_pct"]
+            )
+            direction = signal["signal"]
+            strategy = "long_call" if direction == "bullish" else ("long_put" if direction == "bearish" else "hold")
+            rows.append({
+                "symbol": symbol,
+                "status": "ok",
+                "signal": direction,
+                "score": signal["score"],
+                "strategy": strategy,
+                "risk": risk["risk_score"],
+                "risk_level": risk["level"],
+            })
+        return rows
+
     def evaluate_symbol(self, symbol: str, execute: bool = False, qty: int = 1) -> Dict[str, object]:
         bars = self.market_agent.get_bars(symbol, limit=120, timeframe="1Day")
         is_empty_bars = bars is None

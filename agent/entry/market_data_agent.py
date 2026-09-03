@@ -95,8 +95,45 @@ class MarketDataAgent:
         else:
             bars = []
 
+        return self._bars_to_df(bars, limit)
+
+    def get_bars_multi(self, symbols: List[str], limit: int = 120, timeframe: str = "1Day") -> Dict[str, pd.DataFrame]:
+        """Fetch bars for many symbols in a single API request (used by the fast watchlist scan)."""
+        tf = self._to_timeframe(timeframe)
+        cleaned = [(s or "").upper().strip() for s in (symbols or []) if s and str(s).strip()]
+        if not cleaned:
+            return {}
+
+        end_dt = dt.datetime.now(dt.timezone.utc)
+        if timeframe == "1Day":
+            lookback_days = max(int(limit) * 2, 40)
+            request_limit = None
+        else:
+            lookback_days = max(int(limit), 30)
+            request_limit = limit
+        start_dt = end_dt - dt.timedelta(days=lookback_days)
+
+        request = StockBarsRequest(
+            symbol_or_symbols=cleaned,
+            timeframe=tf,
+            start=start_dt,
+            end=end_dt,
+            limit=request_limit,
+            feed=DataFeed.IEX,
+        )
+        response = self.client.get_stock_bars(request)
+        bar_map = getattr(response, "data", None) or {}
+
+        result: Dict[str, pd.DataFrame] = {}
+        for symbol in cleaned:
+            bars = bar_map.get(symbol, []) if isinstance(bar_map, dict) else []
+            result[symbol] = self._bars_to_df(bars, limit)
+        return result
+
+    @classmethod
+    def _bars_to_df(cls, bars, limit: int) -> pd.DataFrame:
         if not bars:
-            return self._empty_bars_df(limit)
+            return cls._empty_bars_df(limit)
 
         rows = []
         for bar in bars:

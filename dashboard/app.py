@@ -214,23 +214,25 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown('<div class="panel-header">Ticker</div>', unsafe_allow_html=True)
-    if "ticker_input" not in st.session_state:
-        st.session_state["ticker_input"] = st.session_state.get("selected_ticker", "AAPL")
+    if "ticker_select" not in st.session_state:
+        st.session_state["ticker_select"] = st.session_state.get("selected_ticker", "AAPL")
     st.caption("Quick pick")
     qcols = st.columns(4)
     for i, t in enumerate(QUICK_TICKERS):
         if qcols[i % 4].button(t, key=f"pick_{t}", width="stretch"):
-            st.session_state["ticker_input"] = t
+            st.session_state["ticker_select"] = t
             st.rerun()
-    # Free-text so any Alpaca-tradable symbol can be analyzed, not just the watchlist.
-    symbol = st.text_input("Or type any symbol", key="ticker_input", placeholder="e.g. CRM, BABA, SHOP").upper().strip() or "AAPL"
+    # Scrollable, searchable dropdown of the full watchlist; accept_new_options lets you type any
+    # Alpaca-tradable symbol that isn't in the list.
+    current = st.session_state.get("ticker_select", "AAPL")
+    ticker_options = WATCHLIST if current in WATCHLIST else [current] + WATCHLIST
+    symbol = (st.selectbox("Choose or type a ticker", options=ticker_options, key="ticker_select", accept_new_options=True) or "AAPL").upper().strip()
     st.session_state["selected_ticker"] = symbol
 
     st.markdown("---")
     analyze = st.button("Analyze signal", width="stretch", key="analyze_btn")
     execute_trade = st.button("Execute trade", width="stretch", key="execute_btn", type="primary")
     defense_cycle = st.button("Run defense cycle", width="stretch", key="defense_btn")
-    st.caption(f"🧠 Explanations: {provider_name}")
 
 
 # ----------------------------- actions -----------------------------
@@ -276,8 +278,7 @@ if defense_cycle:
 # ----------------------------- header + KPIs -----------------------------
 st.markdown(
     '<div class="topbar"><div><div class="title-line">Quant Trading Agent</div>'
-    '<div class="subtitle-line">Autonomous options desk · signal engine · risk defense · explainable execution</div></div>'
-    f'<div><span class="badge">PAPER TRADING</span> &nbsp; <span class="badge">🧠 {provider_name}</span></div></div>',
+    '<div class="subtitle-line">Autonomous options desk · signal engine · risk defense · explainable execution</div></div></div>',
     unsafe_allow_html=True,
 )
 
@@ -415,24 +416,20 @@ with tab_scan:
     st.markdown('<div class="panel-header">📡 Autonomous watchlist scan</div>', unsafe_allow_html=True)
     st.caption("Runs the signal engine + risk across the whole watchlist and shows what the agent would do on each. Read-only (no orders placed).")
     if st.button("Scan watchlist now", key="scan_btn"):
-        with st.spinner("Scanning watchlist… (fetches data per ticker, may take a bit)"):
-            cycle = st.session_state.orchestrator.run_cycle(watchlist=WATCHLIST, manage=False, scan=True, scan_execute=False)
-        st.session_state["scan"] = cycle.get("scanned", [])
+        with st.spinner("Scanning watchlist…"):
+            st.session_state["scan"] = st.session_state.orchestrator.scan_watchlist(WATCHLIST)
 
     scanned = st.session_state.get("scan")
     if scanned:
         rows = []
         for r in scanned:
-            if not isinstance(r, dict) or r.get("status") != "ok":
-                rows.append({"symbol": r.get("symbol") if isinstance(r, dict) else "?", "signal": "no_data", "score": None, "strategy": "—", "risk": None, "contract": "—"})
-                continue
             rows.append({
-                "symbol": r["symbol"],
-                "signal": r["signal"]["signal"],
-                "score": r["signal"]["score"],
-                "strategy": r["strategy"]["strategy"],
-                "risk": r["risk"]["risk_score"],
-                "contract": r["strategy"].get("option_symbol") or "—",
+                "symbol": r.get("symbol", "?"),
+                "signal": r.get("signal", "no_data"),
+                "score": r.get("score"),
+                "strategy": r.get("strategy", "—"),
+                "risk": r.get("risk"),
+                "risk level": (r.get("risk_level") or "—"),
             })
         scan_df = pd.DataFrame(rows)
 
