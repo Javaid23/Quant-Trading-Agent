@@ -11,6 +11,7 @@ demo/backtest_results.md so the pitch deck can cite concrete numbers.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -122,7 +123,23 @@ def main() -> int:
         )
 
     report_path = write_report(results, oos_results, list(price_map.keys()), LOOKBACK_BARS)
-    print(f"\nWrote report to {report_path}")
+
+    # Small machine-readable summary the dashboard's AI-Council 'Backtest' agent reads.
+    oos_winner = oos_results[0] if oos_results else {}
+    in_winner = results[0] if results else {}
+    summary = {
+        "oos_best_combo": oos_winner.get("combo"),
+        "oos_sharpe": oos_winner.get("avg_sharpe"),
+        "oos_worst_drawdown_pct": oos_winner.get("worst_drawdown_pct"),
+        "oos_avg_return_pct": oos_winner.get("avg_return_pct"),
+        "in_sample_best_combo": in_winner.get("combo"),
+        "in_sample_sharpe": in_winner.get("avg_sharpe"),
+        "tickers": len(price_map),
+        "bars": LOOKBACK_BARS,
+    }
+    summary_path = Path(__file__).resolve().parents[1] / "demo" / "backtest_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"Wrote report to {report_path} and summary to {summary_path}")
     return 0
 
 

@@ -71,6 +71,18 @@
       "order_id": "37b2bd72-4649-4a5a-ac91-1211be43b325",
       "explanation": "Signal=bullish. Risk score=14.4 (low). Action=long_call. This is a paper trading system and this explanation is deterministic.",
       "market_context": "Autonomous multi-ticker scan"
+    },
+    {
+      "timestamp": "2026-09-03T19:05:32.649569+00:00",
+      "symbol": "META260925P00615000",
+      "side": "buy",
+      "strategy": "protective_put",
+      "direction": null,
+      "option_type": "put",
+      "status": "pending_new",
+      "order_id": "6cca28b8-3424-4a8d-9331-2255990d872e",
+      "explanation": "The trading decision is to go bullish based on the signal, but with a medium-risk level indicated by a risk score of 49.77. To protect against potential losses, a protective put strategy is being used with the option symbol META260925P00615000, suitable for the paper trading system given the medium risk detected.",
+      "market_context": "Live paper execution"
     }
   ]
 }

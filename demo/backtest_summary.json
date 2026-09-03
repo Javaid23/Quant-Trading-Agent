@@ -1,0 +1,10 @@
+{
+  "oos_best_combo": "rsi",
+  "oos_sharpe": 0.08,
+  "oos_worst_drawdown_pct": -6.84,
+  "oos_avg_return_pct": 0.58,
+  "in_sample_best_combo": "rsi",
+  "in_sample_sharpe": 0.26,
+  "tickers": 10,
+  "bars": 250
+}
