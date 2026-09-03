@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable
 
+from agent.defense.exit_manager import ExitManager
 from agent.defense.risk_scorer import RiskScorer
 
 LEGACY_STALE_POSITIONS = {
@@ -27,6 +28,7 @@ class Orchestrator:
         self.market_agent = MarketDataAgent()
         self.signal_engine = SignalEngine()
         self.risk_scorer = RiskScorer()
+        self.exit_manager = ExitManager()
         self.strategy_selector = StrategySelector()
         self.explainer = Explainer()
         try:
@@ -135,6 +137,42 @@ class Orchestrator:
             "delta_exposure": float(delta_exposure),
             "iv_rank_shift": float(iv_rank_shift),
             "drawdown_pct": float(drawdown_pct),
+        }
+
+    def manage_open_positions(self, execute: bool = False) -> Dict[str, Any]:
+        """Review every open position and take-profit / stop-loss / near-expiry exit as needed.
+
+        This is the active book-management pass: it does not open anything, it only closes positions that
+        have hit a profit target, a loss limit, or their expiry window. Returns a structured summary so the
+        dashboard and logs can show exactly what was decided and why.
+        """
+        positions = list(self._get_open_positions())
+        decisions = self.exit_manager.evaluate_portfolio(positions)
+
+        actions: list[Dict[str, Any]] = []
+        for decision in decisions:
+            if not decision["should_close"]:
+                continue
+
+            execution_result = None
+            if execute and self.execution_agent is not None:
+                symbol = decision["symbol"]
+                try:
+                    if decision["is_option"]:
+                        execution_result = self.execution_agent.close_option_position_with_limit_fallback(symbol)
+                    else:
+                        root = self.execution_agent._underlying_root(symbol)
+                        execution_result = self.execution_agent.close_positions_for_symbol(root)
+                except Exception as exc:  # pragma: no cover - defensive, network failures
+                    execution_result = {"status": "error", "submitted": False, "message": str(exc)}
+
+            actions.append({**decision, "execution": execution_result})
+
+        return {
+            "evaluated": len(decisions),
+            "to_close": len(actions),
+            "actions": actions,
+            "decisions": decisions,
         }
 
     def evaluate_symbol(self, symbol: str, execute: bool = False, qty: int = 1) -> Dict[str, object]:
