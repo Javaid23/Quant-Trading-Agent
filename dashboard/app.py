@@ -10,7 +10,11 @@ from agent.trade_log import TRADE_FIELDS, TradeLog
 
 st.set_page_config(page_title="Quant Trading Agent", page_icon="📈", layout="wide")
 
-WATCHLIST = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY", "QQQ", "NFLX", "AMD", "PLTR"]
+WATCHLIST = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY", "QQQ", "NFLX",
+    "AMD", "PLTR", "INTC", "UBER", "COIN", "DIS", "JPM", "BAC", "XOM", "COST",
+]
+QUICK_TICKERS = WATCHLIST[:8]
 _trade_log = TradeLog()
 
 
@@ -210,21 +214,17 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown('<div class="panel-header">Ticker</div>', unsafe_allow_html=True)
-    query = st.text_input("Search ticker", value=st.session_state.get("ticker_query", ""), placeholder="Type to filter…", key="ticker_search")
-    options = [t for t in WATCHLIST if not query or query.upper() in t]
-    if not options:
-        options = WATCHLIST
-    default = st.session_state.get("selected_ticker", "AAPL")
-    idx = options.index(default) if default in options else 0
-    symbol = st.selectbox("Choose ticker", options=options, index=idx, key="ticker_selector").upper()
-    st.session_state["selected_ticker"] = symbol
-    st.session_state["ticker_query"] = query
-
-    cols = st.columns(3)
-    for i, t in enumerate(WATCHLIST[:6]):
-        if cols[i % 3].button(t, key=f"w_{t}", width="stretch"):
-            st.session_state["selected_ticker"] = t
+    if "ticker_input" not in st.session_state:
+        st.session_state["ticker_input"] = st.session_state.get("selected_ticker", "AAPL")
+    st.caption("Quick pick")
+    qcols = st.columns(4)
+    for i, t in enumerate(QUICK_TICKERS):
+        if qcols[i % 4].button(t, key=f"pick_{t}", width="stretch"):
+            st.session_state["ticker_input"] = t
             st.rerun()
+    # Free-text so any Alpaca-tradable symbol can be analyzed, not just the watchlist.
+    symbol = st.text_input("Or type any symbol", key="ticker_input", placeholder="e.g. CRM, BABA, SHOP").upper().strip() or "AAPL"
+    st.session_state["selected_ticker"] = symbol
 
     st.markdown("---")
     analyze = st.button("Analyze signal", width="stretch", key="analyze_btn")
@@ -357,7 +357,7 @@ with tab_agent:
         kpi(d[1], "Contract", option_symbol if option_symbol != "—" else "None", "OCC option symbol")
         kpi(d[2], "Direction", str(result["strategy"].get("direction", "—")).upper(), "held" if result.get("has_symbol_position") else "new position")
 
-        st.markdown('<div class="panel-header">🧠 AI rationale</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel-header"> AI rationale</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="ai-box">{result["explanation"]}</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="panel-header">Recent price</div>', unsafe_allow_html=True)
