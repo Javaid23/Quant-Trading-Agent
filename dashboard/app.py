@@ -9,7 +9,6 @@ from agent.entry.indicators import calculate_bollinger_bands, calculate_macd, ca
 from agent.entry.market_data_agent import MarketDataAgent
 from agent.entry.signal_engine import SignalEngine
 from agent.orchestrator import Orchestrator
-from alpaca_mcp_wrapper.alpaca_mcp_client import AlpacaMCPClient
 
 
 def get_trade_history_path() -> Path:
@@ -314,13 +313,17 @@ with st.sidebar:
     market_label_color = "#cbd5e1"
     next_open_text = ""
     try:
-        clock = AlpacaMCPClient().client.get_clock()
-        is_market_open = bool(getattr(clock, "is_open", False))
+        execution_agent = getattr(st.session_state.orchestrator, "execution_agent", None)
+        if execution_agent is None:
+            raise RuntimeError("Execution agent unavailable")
+        # get_market_clock() returns a normalized dict, so read keys rather than attributes.
+        clock = execution_agent.get_market_clock()
+        is_market_open = bool(clock.get("is_open", False))
         market_status_label = "Open" if is_market_open else "Closed"
         market_status_color = "rgba(34, 197, 94, 0.15)" if is_market_open else "rgba(239, 68, 68, 0.14)"
         market_label_color = "#4ade80" if is_market_open else "#f87171"
-        next_open = getattr(clock, "next_open", None)
-        if next_open is not None:
+        next_open = clock.get("next_open")
+        if next_open:
             next_open_text = f"Next open: {next_open}"
     except Exception:
         market_status_text = "Market data unavailable"
@@ -431,7 +434,9 @@ if result is not None:
     }
     signal_style = signal_colors.get(signal, signal_colors["neutral"])
 
-    signal_pct = max(0.0, min(1.0, float(score) / 100.0)) if isinstance(score, (int, float)) else 0.5
+    # Score spans -100 (max bearish) .. +100 (max bullish); map linearly to 0..100% so bearish signals
+    # are not clamped to an empty bar (0 -> 50%, +100 -> 100%, -100 -> 0%).
+    signal_pct = max(0.0, min(1.0, (float(score) + 100.0) / 200.0)) if isinstance(score, (int, float)) else 0.5
     risk_pct = max(0.0, min(1.0, float(risk) / 100.0))
 
     st.markdown('<div class="panel-header">Market Status</div>', unsafe_allow_html=True)
@@ -532,11 +537,16 @@ if result is not None:
 
     st.markdown("---")
     st.markdown('<div class="panel-header">Market overview</div>', unsafe_allow_html=True)
-    chart_values = [
-        {"date": i, "close": 100 + (i * 0.8) + (2 if signal == "bullish" else -1.5 if signal == "bearish" else 0.2)}
-        for i in range(1, 21)
-    ]
-    st.line_chart(chart_values, x="date", y="close")
+    try:
+        overview_bars = st.session_state.orchestrator.market_agent.get_bars(symbol, limit=30, timeframe="1Day")
+        if overview_bars is not None and not overview_bars.empty:
+            overview_df = overview_bars.copy()
+            overview_df["timestamp"] = pd.to_datetime(overview_df["timestamp"])
+            st.line_chart(overview_df, x="timestamp", y="close")
+        else:
+            st.caption("No recent price data available for this ticker.")
+    except Exception as exc:
+        st.caption(f"Market overview unavailable: {exc}")
 
     st.markdown("---")
     st.json({
@@ -605,7 +615,6 @@ try:
             .mark_area(opacity=0.12, color="#22c55e")
             .encode(x="date:T", y="Upper Band:Q", y2="Lower Band:Q")
         )
-        st.altair_chart((band_fill + price_chart + fast_ma + slow_ma).properties(height=360), use_container_width=True)
 
         indicator_df = pd.DataFrame({
             "date": historical_bars.index,
@@ -664,8 +673,14 @@ if not trade_history.empty:
     trade_history["timestamp"] = pd.to_datetime(trade_history["timestamp"], errors="coerce")
     st.markdown("---")
     st.markdown('<div class="panel-header">Trade and Decision History</div>', unsafe_allow_html=True)
+    # Only display columns that are actually present so a legacy/partial row cannot raise a KeyError.
+    display_cols = [
+        col
+        for col in ["timestamp", "symbol", "strategy", "direction", "side", "status", "order_id", "explanation"]
+        if col in trade_history.columns
+    ]
     st.dataframe(
-        trade_history[["timestamp", "symbol", "strategy", "direction", "side", "status", "order_id", "explanation"]].sort_values("timestamp", ascending=False),
+        trade_history[display_cols].sort_values("timestamp", ascending=False),
         use_container_width=True,
         hide_index=True,
     )

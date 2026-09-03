@@ -60,14 +60,23 @@ class MarketDataAgent:
             return self._empty_bars_df(limit)
 
         end_dt = dt.datetime.now(dt.timezone.utc)
-        start_dt = end_dt - dt.timedelta(days=max(int(limit), 30))
+        # Calendar days span weekends/holidays, so `limit` trading bars need a wider window. For daily
+        # bars we roughly double the lookback and trim to the most recent `limit` rows below, otherwise
+        # a request for e.g. 260 daily bars would silently return only ~180 (about 9 months).
+        if timeframe == "1Day":
+            lookback_days = max(int(limit) * 2, 40)
+            request_limit = None
+        else:
+            lookback_days = max(int(limit), 30)
+            request_limit = limit
+        start_dt = end_dt - dt.timedelta(days=lookback_days)
 
         request = StockBarsRequest(
             symbol_or_symbols=[symbol],
             timeframe=tf,
             start=start_dt,
             end=end_dt,
-            limit=limit,
+            limit=request_limit,
             feed=DataFeed.IEX,
         )
         response = self.client.get_stock_bars(request)
@@ -113,7 +122,11 @@ class MarketDataAgent:
                 "close": float(close_val),
                 "volume": int(volume_val),
             })
-        return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+        frame = pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+        # Keep only the most recent `limit` bars; the widened window above can return more than requested.
+        if limit and len(frame) > int(limit):
+            frame = frame.tail(int(limit)).reset_index(drop=True)
+        return frame
 
     @staticmethod
     def _empty_bars_df(limit: int) -> pd.DataFrame:

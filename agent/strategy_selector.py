@@ -7,7 +7,9 @@ from typing import Any, Dict, Optional
 from alpaca.data.enums import OptionsFeed
 from alpaca.data.historical import OptionHistoricalDataClient
 from alpaca.data.requests import OptionChainRequest
-from alpaca.trading.enums import ContractType
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import AssetStatus, ContractType
+from alpaca.trading.requests import GetOptionContractsRequest
 
 
 class StrategySelector:
@@ -17,23 +19,92 @@ class StrategySelector:
         self.api_key = api_key or os.getenv("ALPACA_API_KEY")
         self.secret_key = secret_key or os.getenv("ALPACA_SECRET_KEY")
         self.option_client = None
+        self.trading_client = None
         if self.api_key and self.secret_key:
             try:
                 self.option_client = OptionHistoricalDataClient(self.api_key, self.secret_key)
             except Exception:
                 self.option_client = None
+            try:
+                self.trading_client = TradingClient(self.api_key, self.secret_key, paper=True)
+            except Exception:
+                self.trading_client = None
 
     def _build_fallback_option_symbol(self, symbol: str, option_type: str, strike: float | None = None) -> str:
-        """Last-resort fallback only; real chain data should be preferred whenever available."""
+        """Last-resort fallback only; real chain data should be preferred whenever available.
+
+        Builds an OCC-compliant symbol: ROOT + YYMMDD + C/P + strike*1000 zero-padded to 8 digits.
+        The expiry is snapped to the nearest upcoming Friday (standard weekly option expiration) so the
+        synthesized contract is far more likely to correspond to a contract Alpaca actually lists.
+        """
         option_type = (option_type or "call").lower()
         symbol = (symbol or "").upper().strip()
 
-        expiry = (date.today() + timedelta(days=21)).strftime("%y%m%d")
+        target = date.today() + timedelta(days=21)
+        # Standard options expire on Fridays (weekday() == 4); snap forward to the next Friday.
+        days_to_friday = (4 - target.weekday()) % 7
+        target = target + timedelta(days=days_to_friday)
+        expiry = target.strftime("%y%m%d")
+
         strike_value = float(strike if strike is not None else 100.0)
-        strike_int = int(round(strike_value * 100))
+        # OCC encodes the strike as price * 1000 in 8 digits (e.g. $220.00 -> 00220000).
+        strike_int = int(round(strike_value * 1000))
         strike_code = f"{strike_int:08d}"
         contract_type = "C" if option_type == "call" else "P"
         return f"{symbol}{expiry}{contract_type}{strike_code}"
+
+    def _select_from_trading_contracts(
+        self, symbol: str, option_type: str, current_price: float | None = None
+    ) -> str | None:
+        """Pick a real, tradable contract from Alpaca's trading option-contracts endpoint.
+
+        This is the authoritative list of contracts Alpaca will accept for an order, so preferring it
+        over a synthesized symbol prevents the 'asset not found' rejections seen at submission time.
+        """
+        if self.trading_client is None:
+            return None
+        try:
+            today = date.today()
+            request = GetOptionContractsRequest(
+                underlying_symbols=[symbol],
+                type=ContractType.CALL if option_type == "call" else ContractType.PUT,
+                status=AssetStatus.ACTIVE,
+                expiration_date_gte=today + timedelta(days=14),
+                expiration_date_lte=today + timedelta(days=45),
+                limit=500,
+            )
+            response = self.trading_client.get_option_contracts(request)
+            contracts = getattr(response, "option_contracts", None) or []
+
+            price = float(current_price) if current_price is not None else 100.0
+            target_expiry_days = 21
+            valid_contracts = []
+            for contract in contracts:
+                # Skip contracts Alpaca flags as untradable; only tradable ones can be submitted.
+                if getattr(contract, "tradable", True) is False:
+                    continue
+                real_symbol = str(getattr(contract, "symbol", "") or "").upper()
+                expiration = getattr(contract, "expiration_date", None)
+                strike = getattr(contract, "strike_price", None)
+                if not real_symbol or expiration is None or strike is None:
+                    continue
+                valid_contracts.append(
+                    {"symbol": real_symbol, "expiration": expiration, "strike_price": float(strike)}
+                )
+
+            if not valid_contracts:
+                return None
+
+            target_contract = min(
+                valid_contracts,
+                key=lambda item: (
+                    abs((item["expiration"] - today).days - target_expiry_days),
+                    abs(item["strike_price"] - price),
+                ),
+            )
+            return str(target_contract["symbol"]).upper()
+        except Exception:
+            return None
 
     def _extract_contract_map(self, chain: Any) -> Dict[str, Any]:
         if isinstance(chain, dict):
@@ -128,6 +199,12 @@ class StrategySelector:
                         return str(target_contract["symbol"]).upper()
             except Exception:
                 pass
+
+        # Prefer a real, tradable contract from the trading API before resorting to a synthesized
+        # symbol, which may not correspond to any listed contract and would be rejected on submission.
+        trading_symbol = self._select_from_trading_contracts(symbol, option_type, current_price=current_price)
+        if trading_symbol:
+            return trading_symbol
 
         base_price = float(current_price) if current_price is not None else 100.0
         return self._build_fallback_option_symbol(symbol, option_type, strike=base_price)
