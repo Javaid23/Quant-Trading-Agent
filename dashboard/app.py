@@ -205,8 +205,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if "orchestrator" not in st.session_state:
+# Recreate the orchestrator if it is missing or a stale instance from an earlier code version is cached
+# in this session (Streamlit keeps session_state across reruns, so an old build can leave a stale object).
+if "orchestrator" not in st.session_state or not hasattr(st.session_state.orchestrator, "scan_watchlist"):
     st.session_state.orchestrator = Orchestrator()
+    st.session_state["account_loaded"] = False
 
 refresh_portfolio(force=False)
 account = st.session_state.get("account")
