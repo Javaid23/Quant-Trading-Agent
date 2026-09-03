@@ -1,6 +1,11 @@
 import json
 import os
+import sys
 from pathlib import Path
+
+# Ensure the repo root is importable when Streamlit runs dashboard/app.py directly (e.g. on Streamlit
+# Cloud, where PYTHONPATH is not set and only the dashboard/ folder is on sys.path).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import altair as alt
 import pandas as pd
