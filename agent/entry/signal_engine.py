@@ -17,6 +17,14 @@ class SignalEngine:
         self.macd_slow = 26
         self.macd_signal = 9
 
+        # Indicator weights. Our combination backtest (see demo/backtest_results.md) showed momentum
+        # (MACD) dragged returns while mean-reversion (Bollinger, RSI) led, so MACD is down-weighted and
+        # Bollinger boosted. We keep all four indicators for robustness rather than fitting one regime.
+        self.rsi_weight = 20.0
+        self.macd_weight = 10.0
+        self.bollinger_weight = 20.0
+        self.ma_weight = 15.0
+
     def generate_signal(self, data: pd.DataFrame) -> Dict[str, float | str]:
         if data is None:
             return {"signal": "no_data", "score": 0.0, "reason": "No market data available for this symbol."}
@@ -49,24 +57,24 @@ class SignalEngine:
 
         score = 0.0
         if rsi[last_idx] < 30:
-            score += 20
+            score += self.rsi_weight
         elif rsi[last_idx] > 70:
-            score -= 20
+            score -= self.rsi_weight
 
         if macd[last_idx] > signal_line[last_idx]:
-            score += 25
+            score += self.macd_weight
         else:
-            score -= 25
+            score -= self.macd_weight
 
         if closes.iloc[last_idx] > bands["middle"][last_idx]:
-            score += 10
+            score += self.bollinger_weight
         else:
-            score -= 10
+            score -= self.bollinger_weight
 
         if ma["fast_ma"][last_idx] > ma["slow_ma"][last_idx]:
-            score += 15
+            score += self.ma_weight
         else:
-            score -= 15
+            score -= self.ma_weight
 
         if score > 15:
             signal = "bullish"

@@ -16,7 +16,8 @@ from agent.entry.indicators import (
 # The four indicators the live SignalEngine blends, with the same signed weights it uses, so the
 # selection study describes the very strategy that trades rather than a parallel one.
 INDICATORS = ("rsi", "macd", "bollinger", "ma")
-WEIGHTS = {"rsi": 20.0, "macd": 25.0, "bollinger": 10.0, "ma": 15.0}
+# Mirrors SignalEngine's weights so the study describes the strategy that actually trades.
+WEIGHTS = {"rsi": 20.0, "macd": 10.0, "bollinger": 20.0, "ma": 15.0}
 
 
 def _component_scores(closes: pd.Series) -> Dict[str, np.ndarray]:
