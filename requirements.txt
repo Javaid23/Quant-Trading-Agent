@@ -9,4 +9,7 @@ fastmcp>=2.0.0
 streamlit-lightweight-charts>=0.7.0
 pytest>=8.0.0
 # Alpaca MCP server (git submodule) — installs the `alpaca-mcp-server` console script used for execution.
-./mcp_server
+# Disabled for Streamlit Cloud, which does not fetch git submodules: the dashboard falls back to the
+# Alpaca REST API for account/positions/clock, so it stays fully functional. Uncomment for local/Docker
+# installs where the submodule is present:  pip install -e ./mcp_server
+# ./mcp_server
