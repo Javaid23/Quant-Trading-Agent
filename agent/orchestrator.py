@@ -36,7 +36,9 @@ class Orchestrator:
         self.explainer = Explainer()
         try:
             self.execution_agent = ExecutionAgent()
-        except ValueError:
+        except Exception:
+            # Missing credentials (ValueError) or a missing MCP server binary (FileNotFoundError, e.g. on a
+            # cloud host without the submodule). Degrade gracefully; market data and analytics still work.
             self.execution_agent = None
 
     def _get_open_positions(self) -> Iterable[Any]:

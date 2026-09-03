@@ -8,3 +8,5 @@ altair>=5.0.0
 fastmcp>=2.0.0
 streamlit-lightweight-charts>=0.7.0
 pytest>=8.0.0
+# Alpaca MCP server (git submodule) — installs the `alpaca-mcp-server` console script used for execution.
+./mcp_server

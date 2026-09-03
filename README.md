@@ -63,6 +63,26 @@ The MCP server exposes its CLI after installation, so the same environment can b
 
 `alpaca-mcp-server --transport stdio`
 
+## Deploy to Streamlit Community Cloud
+
+1. Push this repo to GitHub (submodule included).
+2. On [share.streamlit.io](https://share.streamlit.io), create a new app from the repo.
+   - **Main file path:** `dashboard/app.py`
+   - **Advanced settings → Python version:** `3.11`
+3. In **App → Settings → Secrets**, paste your keys (see `.streamlit/secrets.toml.example`):
+   ```toml
+   ALPACA_API_KEY = "..."
+   ALPACA_SECRET_KEY = "..."
+   GROQ_API_KEY = ""          # optional LLM (gsk_...), else XAI_API_KEY / FEATHERLESS_API_KEY
+   ```
+4. Deploy. `requirements.txt` installs the Alpaca MCP server from the `./mcp_server` submodule, so
+   execution runs through MCP in the cloud too.
+
+**Resilience:** the dashboard also has a direct Alpaca REST fallback for account/positions/clock, so it
+stays fully functional even if the MCP subprocess is unavailable on the host. If the Cloud build ever
+fails on the `./mcp_server` line (submodule not fetched), comment that line out of `requirements.txt` and
+redeploy — the app runs on the REST fallback and market-data analytics are unaffected.
+
 ## Security
 
 - Never commit .env

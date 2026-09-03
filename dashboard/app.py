@@ -19,6 +19,15 @@ except Exception:
 
 st.set_page_config(page_title="Quant Trading Agent", page_icon="📈", layout="wide")
 
+# On Streamlit Cloud, credentials live in st.secrets; mirror them into env vars so os.getenv works
+# everywhere (execution agent, market data, explainer) without a local .env file.
+try:
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, str) and not os.environ.get(_k):
+            os.environ[_k] = _v
+except Exception:
+    pass
+
 WATCHLIST = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "SPY", "QQQ", "NFLX",
     "AMD", "PLTR", "INTC", "UBER", "COIN", "DIS", "JPM", "BAC", "XOM", "COST",
@@ -92,6 +101,41 @@ def load_backtest_summary() -> dict:
         return {}
 
 
+def _trading_client():
+    from alpaca.trading.client import TradingClient
+    return TradingClient(os.getenv("ALPACA_API_KEY"), os.getenv("ALPACA_SECRET_KEY"), paper=True)
+
+
+def fetch_account_rest():
+    try:
+        a = _trading_client().get_account()
+        return {"account_number": getattr(a, "account_number", None), "status": str(getattr(a, "status", "")),
+                "cash": fnum(a.cash), "buying_power": fnum(a.buying_power),
+                "portfolio_value": fnum(getattr(a, "portfolio_value", a.equity)), "equity": fnum(a.equity)}
+    except Exception:
+        return None
+
+
+def fetch_positions_rest():
+    try:
+        return [
+            {"symbol": p.symbol, "qty": p.qty, "side": str(getattr(p, "side", "")).split(".")[-1].lower(),
+             "avg_entry_price": p.avg_entry_price, "current_price": getattr(p, "current_price", None),
+             "market_value": p.market_value, "unrealized_pl": p.unrealized_pl, "unrealized_plpc": p.unrealized_plpc}
+            for p in _trading_client().get_all_positions()
+        ]
+    except Exception:
+        return []
+
+
+def fetch_clock_rest():
+    try:
+        c = _trading_client().get_clock()
+        return {"is_open": bool(c.is_open), "next_open": str(c.next_open), "next_close": str(c.next_close)}
+    except Exception:
+        return {}
+
+
 def refresh_portfolio(force: bool = False) -> None:
     if not force and st.session_state.get("account_loaded"):
         return
@@ -110,6 +154,13 @@ def refresh_portfolio(force: bool = False) -> None:
             clock = agent.get_market_clock()
         except Exception:
             clock = {}
+    # REST fallback so the dashboard still populates if the MCP subprocess is unavailable (e.g. on cloud).
+    if not account:
+        account = fetch_account_rest()
+    if not positions:
+        positions = fetch_positions_rest()
+    if not clock:
+        clock = fetch_clock_rest()
     st.session_state["account"] = account
     st.session_state["positions"] = positions
     st.session_state["clock"] = clock
