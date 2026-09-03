@@ -50,6 +50,32 @@ def test_execution_agent_close_fallback_uses_limit_order_and_infers_option_type(
     assert result["retry_used"] is True
 
 
+def test_execution_close_returns_on_market_close_without_double_submitting(monkeypatch):
+    agent = ExecutionAgent.__new__(ExecutionAgent)
+    calls = {"market": 0, "limit": 0}
+
+    class FakeClient:
+        def close_position(self, symbol_or_asset_id):
+            calls["market"] += 1
+            # MCP returns a dict; a successful market close must be recognized and returned as-is.
+            return {"id": "mkt-1", "status": "accepted"}
+
+        def place_option_order(self, **kwargs):
+            calls["limit"] += 1
+            return {"id": "lim-1", "status": "accepted"}
+
+    agent.client = FakeClient()
+
+    result = agent.close_option_position_with_limit_fallback("AAPL260925P00325000", qty=1)
+
+    assert result["order_type"] == "sell_to_close_market"
+    assert result["retry_used"] is False
+    assert result["status"] == "accepted"
+    assert calls["market"] == 1
+    # The limit fallback must NOT run when the market close already succeeded.
+    assert calls["limit"] == 0
+
+
 def test_execution_exit_closes_existing_option_and_never_opens_short(monkeypatch):
     agent = ExecutionAgent.__new__(ExecutionAgent)
     closed = {}

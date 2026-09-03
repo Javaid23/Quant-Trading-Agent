@@ -149,8 +149,10 @@ class AlpacaMCPClient:
             order_body["limit_price"] = str(limit_price)
         if client_order_id is not None:
             order_body["client_order_id"] = client_order_id
-        if option_type is not None:
-            order_body["option_type"] = str(option_type).lower()
+        # NOTE: the Alpaca MCP server's place_option_order tool does not accept an `option_type`
+        # argument and rejects the whole order if one is sent. The call/put is already encoded in the
+        # OCC `symbol`, so we deliberately accept the parameter for caller convenience but never forward
+        # it to the tool.
 
         return await self._call_tool("place_option_order", order_body)
 

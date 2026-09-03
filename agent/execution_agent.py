@@ -153,19 +153,22 @@ class ExecutionAgent:
 
         try:
             market_close = self.client.close_position(option_symbol)
-            result = {
-                "symbol": option_symbol,
-                "qty": qty,
-                "order_type": "sell_to_close_market",
-                "status": getattr(market_close, "status", None),
-                "id": getattr(market_close, "id", None),
-                "submitted": True,
-                "retry_used": False,
-            }
-            if getattr(market_close, "status", None) is not None:
-                return result
+            # The MCP server returns a dict, so read status via .get(); using getattr() here always
+            # yielded None and made a successful market close fall through to ALSO submit a limit order
+            # (a double submission). Return as soon as the market close is accepted.
+            status = market_close.get("status") if isinstance(market_close, dict) else getattr(market_close, "status", None)
+            order_id = market_close.get("id") if isinstance(market_close, dict) else getattr(market_close, "id", None)
+            if status is not None:
+                return {
+                    "symbol": option_symbol,
+                    "qty": qty,
+                    "order_type": "sell_to_close_market",
+                    "status": status,
+                    "id": order_id,
+                    "submitted": True,
+                    "retry_used": False,
+                }
         except Exception as exc:
-            market_close = None
             failure_text = str(exc).lower()
             if "no available quote" not in failure_text and "quote" not in failure_text:
                 raise
