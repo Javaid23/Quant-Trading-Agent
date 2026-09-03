@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -11,22 +11,39 @@ load_dotenv()
 
 
 class Explainer:
-    """Lightweight plain-language generator for trade explanations."""
+    """Plain-language generator for trade explanations, backed by Featherless with a safe fallback.
 
-    def __init__(self, api_key: Optional[str] = None):
+    Results are cached per (signal, risk score, strategy) so repeated identical decisions do not spend
+    API credits or add latency during a live demo. If no key is configured or the call fails, a
+    deterministic explanation is returned instead so the agent never blocks on the network.
+    """
+
+    def __init__(self, api_key: Optional[str] = None, model: str = "meta-llama/Meta-Llama-3.1-8B-Instruct"):
         self.api_key = api_key or os.getenv("FEATHERLESS_API_KEY")
+        self.model = model
+        self._cache: Dict[Tuple[str, object, str], str] = {}
+
+    @staticmethod
+    def _deterministic(signal: str, risk: Dict[str, object], strategy: Dict[str, str]) -> str:
+        return (
+            f"Signal={signal}. "
+            f"Risk score={risk.get('risk_score', 'n/a')} ({risk.get('level', 'unknown')}). "
+            f"Action={strategy.get('strategy', 'hold')}. "
+            "This is a paper trading system and this explanation is deterministic."
+        )
 
     def explain(self, signal: str, risk: Dict[str, object], strategy: Dict[str, str]) -> str:
+        cache_key = (str(signal), risk.get("risk_score"), str(strategy.get("strategy")))
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         if not self.api_key:
-            return (
-                f"Signal={signal}. "
-                f"Risk score={risk.get('risk_score', 'n/a')}. "
-                f"Action={strategy.get('strategy', 'hold')}. "
-                "This is a deterministic explanation because no LLM key is configured."
-            )
+            result = self._deterministic(signal, risk, strategy)
+            self._cache[cache_key] = result
+            return result
 
         payload = {
-            "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "model": self.model,
             "messages": [
                 {
                     "role": "user",
@@ -52,9 +69,9 @@ class Explainer:
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
+            result = data["choices"][0]["message"]["content"].strip()
         except Exception:
-            return (
-                f"Signal={signal}. Risk indicates {risk.get('level', 'unknown')} risk. "
-                f"Strategy selected: {strategy.get('strategy', 'hold')} for a paper trading account."
-            )
+            result = self._deterministic(signal, risk, strategy)
+
+        self._cache[cache_key] = result
+        return result
