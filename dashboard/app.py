@@ -381,6 +381,7 @@ with st.sidebar:
 
     analyze = st.button("Analyze signal", use_container_width=True, key="analyze_signal_button")
     execute_trade = st.button("Execute trade", use_container_width=True, key="execute_trade_button", type="primary")
+    defense_cycle = st.button("Run defense cycle", use_container_width=True, key="defense_cycle_button")
 
 result = None
 if analyze:
@@ -419,11 +420,37 @@ if execute_trade:
         st.error(f"Execution failed: {exc}")
         result = None
 
+if defense_cycle:
+    try:
+        with st.spinner("Reviewing open positions for take-profit / stop-loss / expiry..."):
+            cycle = st.session_state.orchestrator.manage_open_positions(execute=True)
+        st.markdown('<div class="panel-header">Defense cycle</div>', unsafe_allow_html=True)
+        st.caption(f"Reviewed {cycle.get('evaluated', 0)} open positions; closing {cycle.get('to_close', 0)}.")
+        actions = cycle.get("actions", [])
+        if actions:
+            actions_df = pd.DataFrame([
+                {
+                    "symbol": action["symbol"],
+                    "action": action["action"],
+                    "P/L %": None if action.get("unrealized_plpc") is None else round(action["unrealized_plpc"] * 100, 1),
+                    "days to expiry": action.get("days_to_expiry"),
+                    "reason": action["reason"],
+                }
+                for action in actions
+            ])
+            st.dataframe(actions_df, use_container_width=True, hide_index=True)
+        else:
+            st.success("No open position breached take-profit, stop-loss, or the expiry window.")
+    except Exception as exc:
+        st.error(f"Defense cycle failed: {exc}")
+
 if result is not None:
     signal = result["signal"]["signal"]
     score = result["signal"]["score"]
     risk = result["risk"]["risk_score"]
     risk_level = result["risk"]["level"].upper()
+    portfolio_risk_block = result.get("portfolio_risk") if isinstance(result, dict) else None
+    portfolio_risk_score = portfolio_risk_block.get("risk_score") if isinstance(portfolio_risk_block, dict) else None
     strategy = result["strategy"]["strategy"]
     explanation = result["explanation"]
 
@@ -501,7 +528,7 @@ if result is not None:
     st.markdown(
         f"""
         <div class="panel">
-            <div style="color: #e2e8f0; font-weight: 600;">Portfolio risk level</div>
+            <div style="color: #e2e8f0; font-weight: 600;">Risk level for {symbol}</div>
             <div style="margin-top: 0.7rem; color: {risk_color}; font-size: 1.7rem; font-weight: 800;">{risk_level}</div>
             <div class="gauge-wrap">
                 <div class="gauge-bar">
@@ -513,6 +540,11 @@ if result is not None:
         """,
         unsafe_allow_html=True,
     )
+    if portfolio_risk_score is not None:
+        st.caption(
+            f"This gauge shows {symbol}-specific risk. Portfolio-wide risk across all open positions: "
+            f"{portfolio_risk_score}/100."
+        )
 
     st.markdown("---")
     st.markdown('<div class="panel-header">Execution Decision</div>', unsafe_allow_html=True)

@@ -216,6 +216,35 @@ class Orchestrator:
             "decisions": decisions,
         }
 
+    def run_cycle(
+        self,
+        watchlist: Iterable[str] | None = None,
+        manage: bool = True,
+        manage_execute: bool = False,
+        scan: bool = True,
+        scan_execute: bool = False,
+        qty: int = 1,
+    ) -> Dict[str, Any]:
+        """Run one autonomous cycle: manage open positions, then scan the watchlist.
+
+        Defaults are deliberately safe: the cycle actively manages existing risk (take-profit /
+        stop-loss / expiry) but only *suggests* new entries unless scan_execute is turned on. This is
+        the loop a scheduler calls repeatedly to make the agent autonomous rather than click-driven.
+        """
+        summary: Dict[str, Any] = {"managed": None, "scanned": []}
+
+        if manage:
+            summary["managed"] = self.manage_open_positions(execute=manage_execute)
+
+        if scan and watchlist:
+            for symbol in watchlist:
+                try:
+                    summary["scanned"].append(self.evaluate_symbol(symbol, execute=scan_execute, qty=qty))
+                except Exception as exc:  # pragma: no cover - defensive, network failures
+                    summary["scanned"].append({"symbol": symbol, "status": "error", "error": str(exc)})
+
+        return summary
+
     def evaluate_symbol(self, symbol: str, execute: bool = False, qty: int = 1) -> Dict[str, object]:
         bars = self.market_agent.get_bars(symbol, limit=120, timeframe="1Day")
         is_empty_bars = bars is None

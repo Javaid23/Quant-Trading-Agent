@@ -88,6 +88,46 @@ def test_orchestrator_uses_live_risk_inputs_and_defense_path(monkeypatch):
     assert result["strategy"]["strategy"] == "protective_put"
 
 
+def test_orchestrator_run_cycle_manages_then_scans(monkeypatch):
+    orchestrator = Orchestrator()
+    calls = {}
+
+    def fake_manage(execute=False):
+        calls["manage_execute"] = execute
+        return {"evaluated": 2, "to_close": 1, "actions": [], "decisions": []}
+
+    def fake_evaluate(symbol, execute=False, qty=1):
+        calls.setdefault("scanned", []).append((symbol, execute))
+        return {"symbol": symbol, "status": "ok"}
+
+    monkeypatch.setattr(orchestrator, "manage_open_positions", fake_manage)
+    monkeypatch.setattr(orchestrator, "evaluate_symbol", fake_evaluate)
+
+    summary = orchestrator.run_cycle(
+        watchlist=["AAPL", "MSFT"], manage=True, manage_execute=True, scan=True, scan_execute=False
+    )
+
+    assert calls["manage_execute"] is True
+    assert calls["scanned"] == [("AAPL", False), ("MSFT", False)]
+    assert summary["managed"]["to_close"] == 1
+    assert [r["symbol"] for r in summary["scanned"]] == ["AAPL", "MSFT"]
+
+
+def test_orchestrator_run_cycle_scan_error_is_captured(monkeypatch):
+    orchestrator = Orchestrator()
+    monkeypatch.setattr(orchestrator, "manage_open_positions", lambda execute=False: {"evaluated": 0, "to_close": 0, "actions": [], "decisions": []})
+
+    def boom(symbol, execute=False, qty=1):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(orchestrator, "evaluate_symbol", boom)
+
+    summary = orchestrator.run_cycle(watchlist=["AAPL"], manage=False, scan=True)
+
+    assert summary["scanned"][0]["status"] == "error"
+    assert "network down" in summary["scanned"][0]["error"]
+
+
 def test_orchestrator_unheld_symbol_not_hijacked_by_portfolio_drawdown(monkeypatch):
     orchestrator = Orchestrator()
 
