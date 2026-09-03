@@ -9,21 +9,59 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+XAI_URL = "https://api.x.ai/v1/chat/completions"
+FEATHERLESS_URL = "https://api.featherless.ai/v1/chat/completions"
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+DEFAULT_XAI_MODEL = "grok-3-mini"
+DEFAULT_FEATHERLESS_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+
 
 class Explainer:
-    """Plain-language generator for trade explanations, backed by Featherless with a safe fallback.
+    """Plain-language generator for trade explanations with a safe deterministic fallback.
 
-    Results are cached per (signal, risk score, strategy) so repeated identical decisions do not spend
-    API credits or add latency during a live demo. If no key is configured or the call fails, a
-    deterministic explanation is returned instead so the agent never blocks on the network.
+    Supports Groq (fast, non-gated free tier), xAI/Grok, and Featherless via their OpenAI-compatible
+    chat endpoints, chosen by whichever key is configured. An xAI key (prefix ``xai-``) is detected even
+    if it was placed in GROQ_API_KEY. Results are cached per (signal, risk score, strategy) so repeated
+    decisions do not spend credits or add latency, and any network/model failure degrades gracefully to a
+    deterministic template rather than blocking the agent.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or os.getenv("FEATHERLESS_API_KEY")
-        # Model is configurable via FEATHERLESS_MODEL so a working (non-gated) model can be selected
-        # without a code change. The default is gated on Featherless and needs a HuggingFace OAuth link.
-        self.model = model or os.getenv("FEATHERLESS_MODEL") or "meta-llama/Meta-Llama-3.1-8B-Instruct"
+    def __init__(
+        self,
+        groq_api_key: Optional[str] = None,
+        xai_api_key: Optional[str] = None,
+        featherless_api_key: Optional[str] = None,
+        groq_model: Optional[str] = None,
+        xai_model: Optional[str] = None,
+        featherless_model: Optional[str] = None,
+        api_key: Optional[str] = None,  # backward-compatible alias for the Featherless key
+    ):
+        self.groq_api_key = groq_api_key if groq_api_key is not None else os.getenv("GROQ_API_KEY")
+        self.xai_api_key = xai_api_key if xai_api_key is not None else os.getenv("XAI_API_KEY")
+        featherless = featherless_api_key if featherless_api_key is not None else api_key
+        self.featherless_api_key = featherless if featherless is not None else os.getenv("FEATHERLESS_API_KEY")
+        self.groq_model = groq_model or os.getenv("GROQ_MODEL") or DEFAULT_GROQ_MODEL
+        self.xai_model = xai_model or os.getenv("XAI_MODEL") or DEFAULT_XAI_MODEL
+        self.featherless_model = featherless_model or os.getenv("FEATHERLESS_MODEL") or DEFAULT_FEATHERLESS_MODEL
         self._cache: Dict[Tuple[str, object, str], str] = {}
+
+    def _resolve_provider(self) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
+        """Return (provider, url, api_key, model) for the first configured provider."""
+        if self.xai_api_key:
+            return ("xai", XAI_URL, self.xai_api_key, self.xai_model)
+        # An xAI key is sometimes pasted into GROQ_API_KEY by mistake; route it to xAI by its prefix.
+        if self.groq_api_key and self.groq_api_key.startswith("xai-"):
+            return ("xai", XAI_URL, self.groq_api_key, self.xai_model)
+        if self.groq_api_key:
+            return ("groq", GROQ_URL, self.groq_api_key, self.groq_model)
+        if self.featherless_api_key:
+            return ("featherless", FEATHERLESS_URL, self.featherless_api_key, self.featherless_model)
+        return ("none", None, None, None)
+
+    @property
+    def provider(self) -> str:
+        return self._resolve_provider()[0]
 
     @staticmethod
     def _deterministic(signal: str, risk: Dict[str, object], strategy: Dict[str, str]) -> str:
@@ -34,44 +72,37 @@ class Explainer:
             "This is a paper trading system and this explanation is deterministic."
         )
 
+    @staticmethod
+    def _prompt(signal: str, risk: Dict[str, object], strategy: Dict[str, str]) -> str:
+        return (
+            f"Explain this trading decision in plain English: "
+            f"signal={signal}, risk={risk}, strategy={strategy}. "
+            "Keep it to 2 sentences and mention that this is a paper trading system."
+        )
+
+    def _call_llm(self, url: str, api_key: str, model: str, prompt: str) -> str:
+        response = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"].strip()
+
     def explain(self, signal: str, risk: Dict[str, object], strategy: Dict[str, str]) -> str:
         cache_key = (str(signal), risk.get("risk_score"), str(strategy.get("strategy")))
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        if not self.api_key:
+        provider, url, api_key, model = self._resolve_provider()
+        if provider == "none":
             result = self._deterministic(signal, risk, strategy)
             self._cache[cache_key] = result
             return result
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        f"Explain this trading decision in plain English: "
-                        f"signal={signal}, risk={risk}, strategy={strategy}. "
-                        "Keep it to 2 sentences and mention that this is a paper trading system."
-                    ),
-                }
-            ],
-        }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
         try:
-            response = requests.post(
-                "https://api.featherless.ai/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=20,
-            )
-            response.raise_for_status()
-            data = response.json()
-            result = data["choices"][0]["message"]["content"].strip()
+            result = self._call_llm(url, api_key, model, self._prompt(signal, risk, strategy))
         except Exception:
             result = self._deterministic(signal, risk, strategy)
 
