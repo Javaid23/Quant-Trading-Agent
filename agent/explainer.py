@@ -14,7 +14,9 @@ XAI_URL = "https://api.x.ai/v1/chat/completions"
 FEATHERLESS_URL = "https://api.featherless.ai/v1/chat/completions"
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 DEFAULT_XAI_MODEL = "grok-3-mini"
-DEFAULT_FEATHERLESS_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+# A non-gated model that works on Featherless without a HuggingFace OAuth link (the meta-llama default
+# is gated). Override with FEATHERLESS_MODEL.
+DEFAULT_FEATHERLESS_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 
 class Explainer:
@@ -46,22 +48,33 @@ class Explainer:
         self.featherless_model = featherless_model or os.getenv("FEATHERLESS_MODEL") or DEFAULT_FEATHERLESS_MODEL
         self._cache: Dict[Tuple[str, object, str], str] = {}
 
-    def _resolve_provider(self) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
-        """Return (provider, url, api_key, model) for the first configured provider."""
-        if self.xai_api_key:
-            return ("xai", XAI_URL, self.xai_api_key, self.xai_model)
+    def _provider_chain(self) -> list[Tuple[str, str, str, str]]:
+        """Ordered (provider, url, api_key, model) list of every configured provider.
+
+        explain() tries them in order and uses the first that succeeds, so a key that is valid but out of
+        credits (e.g. a fresh xAI team) transparently falls through to the next provider.
+        """
+        chain: list[Tuple[str, str, str, str]] = []
+        seen: set[str] = set()
+
+        def add(provider: str, url: str, key: Optional[str], model: str) -> None:
+            if key and key not in seen:
+                chain.append((provider, url, key, model))
+                seen.add(key)
+
         # An xAI key is sometimes pasted into GROQ_API_KEY by mistake; route it to xAI by its prefix.
+        add("xai", XAI_URL, self.xai_api_key, self.xai_model)
         if self.groq_api_key and self.groq_api_key.startswith("xai-"):
-            return ("xai", XAI_URL, self.groq_api_key, self.xai_model)
-        if self.groq_api_key:
-            return ("groq", GROQ_URL, self.groq_api_key, self.groq_model)
-        if self.featherless_api_key:
-            return ("featherless", FEATHERLESS_URL, self.featherless_api_key, self.featherless_model)
-        return ("none", None, None, None)
+            add("xai", XAI_URL, self.groq_api_key, self.xai_model)
+        else:
+            add("groq", GROQ_URL, self.groq_api_key, self.groq_model)
+        add("featherless", FEATHERLESS_URL, self.featherless_api_key, self.featherless_model)
+        return chain
 
     @property
     def provider(self) -> str:
-        return self._resolve_provider()[0]
+        chain = self._provider_chain()
+        return chain[0][0] if chain else "none"
 
     @staticmethod
     def _deterministic(signal: str, risk: Dict[str, object], strategy: Dict[str, str]) -> str:
@@ -95,15 +108,16 @@ class Explainer:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        provider, url, api_key, model = self._resolve_provider()
-        if provider == "none":
-            result = self._deterministic(signal, risk, strategy)
-            self._cache[cache_key] = result
-            return result
+        prompt = self._prompt(signal, risk, strategy)
+        result = None
+        for _provider, url, api_key, model in self._provider_chain():
+            try:
+                result = self._call_llm(url, api_key, model, prompt)
+                break
+            except Exception:
+                continue
 
-        try:
-            result = self._call_llm(url, api_key, model, self._prompt(signal, risk, strategy))
-        except Exception:
+        if result is None:
             result = self._deterministic(signal, risk, strategy)
 
         self._cache[cache_key] = result
