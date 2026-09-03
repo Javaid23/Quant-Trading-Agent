@@ -138,21 +138,21 @@ def candlestick_config(bars: pd.DataFrame):
     return [{
         "chart": {
             "height": 440,
-            "layout": {"background": {"type": "solid", "color": "#0a0e14"}, "textColor": "#94e6c8", "fontFamily": "monospace"},
+            "layout": {"background": {"type": "solid", "color": "#141a23"}, "textColor": "#8b93a7", "fontFamily": "Inter, sans-serif"},
             "grid": {"vertLines": {"color": "rgba(148,163,184,0.05)"}, "horzLines": {"color": "rgba(148,163,184,0.05)"}},
             "rightPriceScale": {"borderColor": "rgba(148,163,184,0.15)"},
             "timeScale": {"borderColor": "rgba(148,163,184,0.15)", "timeVisible": True},
             "crosshair": {"mode": 0},
         },
         "series": [
-            {"type": "Candlestick", "data": candles, "options": {"upColor": "#22c55e", "downColor": "#ef4444", "borderVisible": False, "wickUpColor": "#22c55e", "wickDownColor": "#ef4444"}},
-            {"type": "Line", "data": sma_data, "options": {"color": "#f59e0b", "lineWidth": 2, "title": "SMA 20", "priceLineVisible": False}},
-            {"type": "Line", "data": ema_data, "options": {"color": "#a78bfa", "lineWidth": 2, "title": "EMA 50", "priceLineVisible": False}},
+            {"type": "Candlestick", "data": candles, "options": {"upColor": "#34d399", "downColor": "#f87171", "borderVisible": False, "wickUpColor": "#34d399", "wickDownColor": "#f87171"}},
+            {"type": "Line", "data": sma_data, "options": {"color": "#f6c453", "lineWidth": 2, "title": "SMA 20", "priceLineVisible": False}},
+            {"type": "Line", "data": ema_data, "options": {"color": "#60a5fa", "lineWidth": 2, "title": "EMA 50", "priceLineVisible": False}},
         ],
     }]
 
 
-SIGNAL_COLORS = {"bullish": "#22c55e", "bearish": "#ef4444", "neutral": "#f59e0b", "no_data": "#94a3b8"}
+SIGNAL_COLORS = {"bullish": "#34d399", "bearish": "#f87171", "neutral": "#f6c453", "no_data": "#94a3b8"}
 REGIME = {"bullish": "BULLISH", "bearish": "BEARISH", "neutral": "SIDEWAYS", "no_data": "NO DATA"}
 
 
@@ -160,46 +160,45 @@ REGIME = {"bullish": "BULLISH", "bearish": "BEARISH", "neutral": "SIDEWAYS", "no
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap');
-    html, body, [class*="css"], .stMarkdown, .stMetric { font-family: 'JetBrains Mono', ui-monospace, monospace; }
-    .main, .stApp { background: radial-gradient(1200px 600px at 15% -10%, #0c1626 0%, #05080e 55%, #04060a 100%); color: #d6f5e6; }
-    .block-container { padding-top: 1.2rem; padding-bottom: 3rem; max-width: 1560px; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+    html, body, [class*="css"], .stMarkdown, .stMetric { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .main, .stApp { background: radial-gradient(1100px 520px at 20% -10%, #151b25 0%, #10151d 45%, #0c1017 100%); color: #e6e9f0; }
+    .block-container { padding-top: 1.4rem; padding-bottom: 3rem; max-width: 1560px; }
     #MainMenu, footer { visibility: hidden; }
-    .topbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.8rem;
-        background: linear-gradient(135deg, rgba(8,14,22,0.95), rgba(10,20,16,0.92)); border: 1px solid rgba(34,197,94,0.18);
-        border-radius: 14px; padding: 0.9rem 1.2rem; margin-bottom: 0.8rem; box-shadow: 0 0 30px rgba(34,197,94,0.06); }
-    .title-line { font-size: clamp(1.3rem,2.2vw,1.9rem); font-weight: 800; letter-spacing: 0.14em; color: #e9fff5;
-        text-shadow: 0 0 14px rgba(34,197,94,0.35); }
-    .subtitle-line { color: #6fae95; font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; margin-top: 0.15rem; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.9rem;
+        background: linear-gradient(135deg, #171d28, #131922); border: 1px solid rgba(148,163,184,0.12);
+        border-radius: 16px; padding: 1rem 1.35rem; margin-bottom: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.28); }
+    .title-line { font-size: clamp(1.3rem,2.2vw,1.85rem); font-weight: 800; letter-spacing: -0.01em; color: #f4f6fb; }
+    .title-line .accent { color: #f6c453; }
+    .subtitle-line { color: #8b93a7; font-size: 0.82rem; margin-top: 0.2rem; }
     .pill-row { display:flex; gap:0.5rem; flex-wrap:wrap; }
-    .pill { display:inline-flex; align-items:center; gap:0.4rem; padding:0.32rem 0.7rem; border-radius:999px; font-size:0.66rem;
-        font-weight:700; letter-spacing:0.12em; text-transform:uppercase; border:1px solid rgba(34,197,94,0.25); color:#8be9b8; background: rgba(34,197,94,0.06); }
-    .dot { width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 8px #22c55e; }
-    .dot.off { background:#f59e0b; box-shadow:0 0 8px #f59e0b; }
-    .kpi { background: linear-gradient(160deg, rgba(10,16,24,0.9), rgba(6,12,10,0.9)); border:1px solid rgba(34,197,94,0.14);
-        border-radius:12px; padding:0.8rem 0.95rem; box-shadow: inset 0 0 20px rgba(34,197,94,0.03); }
-    .kpi-label { color:#5f8f7c; font-size:0.64rem; letter-spacing:0.14em; text-transform:uppercase; }
-    .kpi-value { font-size: clamp(1.2rem,1.9vw,1.7rem); font-weight:800; margin-top:0.3rem; letter-spacing:0.02em; }
-    .kpi-sub { color:#6fae95; font-size:0.72rem; margin-top:0.2rem; }
-    .card { background: rgba(9,15,22,0.9); border:1px solid rgba(34,197,94,0.14); border-left:3px solid #22c55e;
-        border-radius:12px; padding:0.85rem 1rem; margin-bottom:0.7rem; }
-    .card-title { color:#8be9b8; font-size:0.68rem; letter-spacing:0.14em; text-transform:uppercase; font-weight:700; display:flex; justify-content:space-between; }
-    .card-body { color:#cfeede; margin-top:0.35rem; font-size:0.95rem; }
-    .verdict { font-size:0.64rem; font-weight:800; letter-spacing:0.1em; padding:0.15rem 0.5rem; border-radius:6px; }
-    .v-pass { background:rgba(34,197,94,0.16); color:#4ade80; }
-    .v-warn { background:rgba(245,158,11,0.16); color:#fbbf24; }
-    .v-fail { background:rgba(239,68,68,0.16); color:#f87171; }
-    .section-h { color:#8be9b8; font-size:0.8rem; letter-spacing:0.16em; text-transform:uppercase; font-weight:700; margin:0.4rem 0 0.5rem; }
-    .stButton > button { font-family:'JetBrains Mono',monospace; border:1px solid rgba(34,197,94,0.3); border-radius:10px; font-weight:700;
-        letter-spacing:0.06em; text-transform:uppercase; font-size:0.72rem; height:2.7rem; width:100%; color:#d6f5e6;
-        background: linear-gradient(180deg, rgba(15,32,24,0.9), rgba(8,16,12,0.95)); }
-    .stButton > button:hover { border-color:#22c55e; box-shadow:0 0 14px rgba(34,197,94,0.25); }
-    .stButton > button[kind="primary"] { background: linear-gradient(180deg, #16a34a, #15803d); border-color:#22c55e; color:#eafff4; }
-    [data-testid="stSidebar"] { background: rgba(4,8,12,0.92); border-right:1px solid rgba(34,197,94,0.12); }
-    .stTabs [data-baseweb="tab-list"] { gap:0.25rem; border-bottom:1px solid rgba(34,197,94,0.14); }
-    .stTabs [data-baseweb="tab"] { background:transparent; font-size:0.74rem; letter-spacing:0.08em; text-transform:uppercase; font-weight:700; color:#5f8f7c; }
-    .stTabs [aria-selected="true"] { color:#4ade80; border-bottom:2px solid #22c55e; }
-    .stDataFrame > div { background: rgba(9,15,22,0.85); border:1px solid rgba(34,197,94,0.1); border-radius:10px; }
+    .pill { display:inline-flex; align-items:center; gap:0.45rem; padding:0.34rem 0.78rem; border-radius:999px; font-size:0.7rem;
+        font-weight:600; letter-spacing:0.01em; border:1px solid rgba(148,163,184,0.16); color:#c7cedd; background: rgba(148,163,184,0.05); }
+    .dot { width:8px; height:8px; border-radius:50%; background:#34d399; box-shadow:0 0 6px rgba(52,211,153,0.6); }
+    .dot.off { background:#f6c453; box-shadow:0 0 6px rgba(246,196,83,0.55); }
+    .kpi { background: #171d28; border:1px solid rgba(148,163,184,0.12); border-radius:14px; padding:0.9rem 1.05rem;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+    .kpi-label { color:#8b93a7; font-size:0.72rem; font-weight:600; letter-spacing:0.03em; text-transform:uppercase; }
+    .kpi-value { font-family:'JetBrains Mono', monospace; font-size: clamp(1.2rem,1.85vw,1.65rem); font-weight:700; margin-top:0.35rem; color:#f4f6fb; }
+    .kpi-sub { color:#8b93a7; font-size:0.76rem; margin-top:0.25rem; }
+    .card { background: #171d28; border:1px solid rgba(148,163,184,0.12); border-left:3px solid #f6c453;
+        border-radius:14px; padding:0.9rem 1.05rem; margin-bottom:0.7rem; box-shadow: 0 8px 24px rgba(0,0,0,0.16); }
+    .card-title { color:#c7cedd; font-size:0.74rem; letter-spacing:0.01em; text-transform:uppercase; font-weight:700; display:flex; justify-content:space-between; align-items:center; }
+    .card-body { color:#cdd4e0; margin-top:0.4rem; font-size:0.94rem; line-height:1.55; }
+    .verdict { font-size:0.66rem; font-weight:700; letter-spacing:0.02em; padding:0.18rem 0.55rem; border-radius:7px; }
+    .v-pass { background:rgba(52,211,153,0.14); color:#34d399; }
+    .v-warn { background:rgba(246,196,83,0.16); color:#f6c453; }
+    .v-fail { background:rgba(248,113,113,0.14); color:#f87171; }
+    .section-h { color:#c7cedd; font-size:0.86rem; letter-spacing:0.01em; font-weight:700; margin:0.5rem 0 0.6rem; }
+    .stButton > button { font-family:'Inter', sans-serif; border:1px solid rgba(148,163,184,0.18); border-radius:11px; font-weight:600;
+        font-size:0.82rem; height:2.7rem; width:100%; color:#e6e9f0; background: #1a212c; transition: all 0.15s ease; }
+    .stButton > button:hover { border-color:#f6c453; color:#f6c453; }
+    .stButton > button[kind="primary"] { background: linear-gradient(180deg, #f6c453, #eab308); border:none; color:#1a1408; font-weight:700; }
+    [data-testid="stSidebar"] { background: #0e131b; border-right:1px solid rgba(148,163,184,0.1); }
+    .stTabs [data-baseweb="tab-list"] { gap:0.4rem; border-bottom:1px solid rgba(148,163,184,0.12); }
+    .stTabs [data-baseweb="tab"] { background:transparent; font-size:0.86rem; font-weight:600; color:#8b93a7; }
+    .stTabs [aria-selected="true"] { color:#f6c453; border-bottom:2px solid #f6c453; }
+    .stDataFrame > div { background: #141a23; border:1px solid rgba(148,163,184,0.1); border-radius:12px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -298,7 +297,7 @@ def pill(label, on=True):
 
 mkt_pill = pill("MARKET · LIVE", True) if is_open else pill("MARKET · CLOSED", False)
 st.markdown(
-    '<div class="topbar"><div><div class="title-line">◈ QUANT TRADING AGENT</div>'
+    '<div class="topbar"><div><div class="title-line"><span class="accent">◈</span> QUANT TRADING AGENT</div>'
     '<div class="subtitle-line">Autonomous Options Desk · Alpaca MCP · Explainable AI</div></div>'
     f'<div class="pill-row">{mkt_pill}{pill("ALPACA · CONNECTED", account_ok)}{pill("PAPER · ACTIVE", True)}{pill("AI ENGINE · RUNNING", True)}</div></div>',
     unsafe_allow_html=True,
@@ -311,10 +310,10 @@ def kpi(col, label, value, sub="", color="#e9fff5"):
 
 k = st.columns(5)
 kpi(k[0], "Portfolio Value", f"${equity:,.2f}", "Alpaca paper account")
-kpi(k[1], "Open P/L", f"${open_pl:,.2f}", "Unrealized", "#4ade80" if open_pl >= 0 else "#f87171")
+kpi(k[1], "Open P/L", f"${open_pl:,.2f}", "Unrealized", "#34d399" if open_pl >= 0 else "#f87171")
 kpi(k[2], "Cash Reserve", f"${cash:,.2f}")
 kpi(k[3], "Buying Power", f"${buying_power:,.2f}")
-kpi(k[4], "Open Positions", f"{len(positions)}", "Market open" if is_open else "Market closed", "#4ade80" if is_open else "#f59e0b")
+kpi(k[4], "Open Positions", f"{len(positions)}", "Market open" if is_open else "Market closed", "#34d399" if is_open else "#f59e0b")
 
 if st.session_state.get("action_msg"):
     kind, text = st.session_state.pop("action_msg")
@@ -335,8 +334,8 @@ with tab_dash:
         hist = fetch_portfolio_history()
         if hist is not None and not hist.empty and len(hist) > 1:
             area = alt.Chart(hist).mark_area(
-                line={"color": "#22c55e"}, color=alt.Gradient(
-                    gradient="linear", stops=[alt.GradientStop(color="rgba(34,197,94,0.35)", offset=0), alt.GradientStop(color="rgba(34,197,94,0.02)", offset=1)], x1=1, x2=1, y1=1, y2=0)
+                line={"color": "#34d399"}, color=alt.Gradient(
+                    gradient="linear", stops=[alt.GradientStop(color="rgba(52,211,153,0.30)", offset=0), alt.GradientStop(color="rgba(52,211,153,0.02)", offset=1)], x1=1, x2=1, y1=1, y2=0)
             ).encode(x=alt.X("time:T", title=None), y=alt.Y("equity:Q", title=None, scale=alt.Scale(zero=False))).properties(height=300)
             st.altair_chart(area, width="stretch")
         else:
@@ -359,7 +358,7 @@ with tab_dash:
         if wl:
             wdf = pd.DataFrame(wl)
             try:
-                styled = wdf.style.map(lambda v: "color:#4ade80" if v > 0 else ("color:#f87171" if v < 0 else ""), subset=["Chg %"]).format({"Price": "${:,.2f}", "Chg %": "{:+.2f}%"})
+                styled = wdf.style.map(lambda v: "color:#34d399" if v > 0 else ("color:#f87171" if v < 0 else ""), subset=["Chg %"]).format({"Price": "${:,.2f}", "Chg %": "{:+.2f}%"})
             except AttributeError:
                 styled = wdf
             st.dataframe(styled, width="stretch", hide_index=True, height=320)
@@ -469,7 +468,7 @@ with tab_lab:
     st.markdown('<div class="section-h">🧪 Strategy Lab · Out-of-Sample Validation</div>', unsafe_allow_html=True)
     m = st.columns(4)
     kpi(m[0], "OOS Best Combo", str(summary.get("oos_best_combo", "—")).upper())
-    kpi(m[1], "OOS Sharpe", f"{summary.get('oos_sharpe', '—')}", "70/30 split", "#4ade80" if fnum(summary.get("oos_sharpe", 0)) > 0 else "#f59e0b")
+    kpi(m[1], "OOS Sharpe", f"{summary.get('oos_sharpe', '—')}", "70/30 split", "#34d399" if fnum(summary.get("oos_sharpe", 0)) > 0 else "#f59e0b")
     kpi(m[2], "OOS Max DD", f"{summary.get('oos_worst_drawdown_pct', '—')}%")
     kpi(m[3], "Universe", f"{summary.get('tickers', '—')} tickers")
     st.caption("Every indicator combination is validated on unseen data (last 30%). See demo/backtest_results.md for the full ranking.")
@@ -487,7 +486,7 @@ with tab_lab:
             for r in scanned
         ])
         try:
-            styled = sdf.style.map(lambda v: {"bullish": "color:#4ade80", "bearish": "color:#f87171", "neutral": "color:#fbbf24"}.get(v, "color:#94a3b8"), subset=["signal"])
+            styled = sdf.style.map(lambda v: {"bullish": "color:#34d399", "bearish": "color:#f87171", "neutral": "color:#fbbf24"}.get(v, "color:#94a3b8"), subset=["signal"])
         except AttributeError:
             styled = sdf
         st.dataframe(styled, width="stretch", hide_index=True)
@@ -506,7 +505,7 @@ with tab_port:
         pdf = positions_dataframe(positions)
         fmt = {"Avg Entry": "${:,.2f}", "Current": "${:,.2f}", "Mkt Value": "${:,.2f}", "Unreal P/L": "${:,.2f}", "P/L %": "{:.2f}%", "Qty": "{:.0f}"}
         try:
-            styled = pdf.style.map(lambda v: "color:#4ade80" if v > 0 else ("color:#f87171" if v < 0 else ""), subset=["Unreal P/L", "P/L %"]).format(fmt)
+            styled = pdf.style.map(lambda v: "color:#34d399" if v > 0 else ("color:#f87171" if v < 0 else ""), subset=["Unreal P/L", "P/L %"]).format(fmt)
         except AttributeError:
             styled = pdf
         st.dataframe(styled, width="stretch", hide_index=True)
