@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -9,57 +6,21 @@ from agent.entry.indicators import calculate_bollinger_bands, calculate_macd, ca
 from agent.entry.market_data_agent import MarketDataAgent
 from agent.entry.signal_engine import SignalEngine
 from agent.orchestrator import Orchestrator
+from agent.trade_log import TRADE_FIELDS, TradeLog
 
 
-def get_trade_history_path() -> Path:
-    path = Path(__file__).resolve().parents[1] / "data" / "logs" / "trade_history.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def ensure_trade_history() -> Path:
-    history_path = get_trade_history_path()
-    if not history_path.exists():
-        default_history = {
-            "trades": [
-                {
-                    "timestamp": "2026-08-31T09:30:00-04:00",
-                    "symbol": "AAPL260918P00100000",
-                    "side": "buy",
-                    "strategy": "long_put",
-                    "direction": "short",
-                    "option_type": "put",
-                    "status": "pending_new",
-                    "order_id": "8ee0c32a-fd0f-4399-b71c-c3a284e589ba",
-                    "explanation": "Signal=bearish. Risk indicates low risk. Strategy selected: long_put for a paper trading account.",
-                    "market_context": "Live paper execution at market open",
-                }
-            ]
-        }
-        history_path.write_text(json.dumps(default_history, indent=2), encoding="utf-8")
-    return history_path
+_trade_log = TradeLog()
 
 
 def load_trade_history() -> pd.DataFrame:
-    history_path = ensure_trade_history()
-    try:
-        payload = json.loads(history_path.read_text(encoding="utf-8"))
-        trades = payload.get("trades", []) if isinstance(payload, dict) else []
-    except Exception:
-        trades = []
+    trades = _trade_log.load()
     if not trades:
-        return pd.DataFrame(columns=["timestamp", "symbol", "strategy", "status", "side", "direction", "option_type", "order_id", "explanation"])
+        return pd.DataFrame(columns=TRADE_FIELDS)
     return pd.DataFrame(trades)
 
 
 def append_trade_history(entry: dict) -> None:
-    history_path = ensure_trade_history()
-    payload = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else {"trades": []}
-    if not isinstance(payload, dict):
-        payload = {"trades": []}
-    payload.setdefault("trades", [])
-    payload["trades"].append(entry)
-    history_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _trade_log.append(entry)
 
 
 st.set_page_config(

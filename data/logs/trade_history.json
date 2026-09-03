@@ -1,16 +1,3 @@
 {
-  "trades": [
-    {
-      "timestamp": "2026-08-31T09:30:00-04:00",
-      "symbol": "AAPL260918P00100000",
-      "side": "buy",
-      "strategy": "long_put",
-      "direction": "short",
-      "option_type": "put",
-      "status": "pending_new",
-      "order_id": "8ee0c32a-fd0f-4399-b71c-c3a284e589ba",
-      "explanation": "Signal=bearish. Risk indicates low risk. Strategy selected: long_put for a paper trading account.",
-      "market_context": "Live paper execution at market open"
-    }
-  ]
+  "trades": []
 }
