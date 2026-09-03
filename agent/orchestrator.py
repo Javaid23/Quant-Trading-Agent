@@ -161,9 +161,9 @@ class Orchestrator:
             if loss_pct > worst_negative_unrealized_plpc:
                 worst_negative_unrealized_plpc = float(loss_pct)
 
-        # Real portfolio proxy: delta exposure is the share of account equity currently tied up in open option positions.
-        # Limitation: this is a rough position-value proxy, not true portfolio delta or option Greeks.
-        delta_exposure = min(total_market_value / equity, 1.0) if positions else 0.0
+        # Capital-at-risk proxy: the share of account equity currently tied up in open positions.
+        # Limitation: this is a position-value proxy, not true portfolio delta or option Greeks.
+        capital_at_risk = min(total_market_value / equity, 1.0) if positions else 0.0
 
         # Real portfolio proxy: drawdown is the worst negative unrealized P&L percentage across open positions.
         # We prefer Alpaca's unrealized_plpc field as source-of-truth; if it is missing or stale, we fall back to a cost-basis ratio only when
@@ -175,7 +175,7 @@ class Orchestrator:
         volatility = max(0.0, min(1.0, float(volatility_rank)))
 
         return {
-            "delta_exposure": float(delta_exposure),
+            "capital_at_risk": float(capital_at_risk),
             "volatility": float(volatility),
             "drawdown_pct": float(drawdown_pct),
         }
@@ -295,13 +295,13 @@ class Orchestrator:
         # positions are underwater. Portfolio-wide risk is reported separately for monitoring.
         symbol_inputs = self._risk_inputs_from_positions(symbol_positions, equity, volatility_rank_value)
         risk = self.risk_scorer.score_portfolio(
-            delta_exposure=symbol_inputs["delta_exposure"],
+            capital_at_risk=symbol_inputs["capital_at_risk"],
             volatility=symbol_inputs["volatility"],
             drawdown_pct=symbol_inputs["drawdown_pct"],
         )
         portfolio_inputs = self._risk_inputs_from_positions(open_positions, equity, volatility_rank_value)
         portfolio_risk = self.risk_scorer.score_portfolio(
-            delta_exposure=portfolio_inputs["delta_exposure"],
+            capital_at_risk=portfolio_inputs["capital_at_risk"],
             volatility=portfolio_inputs["volatility"],
             drawdown_pct=portfolio_inputs["drawdown_pct"],
         )

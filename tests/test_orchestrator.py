@@ -84,7 +84,7 @@ def test_orchestrator_uses_live_risk_inputs_and_defense_path(monkeypatch):
 
     assert result["path"] == "defense"
     assert result["risk"]["risk_score"] >= 45
-    assert result["risk"]["components"]["delta_exposure"] > 0.9
+    assert result["risk"]["components"]["capital_at_risk"] > 0.9
     assert result["strategy"]["strategy"] == "protective_put"
 
 
@@ -258,7 +258,7 @@ def test_orchestrator_execute_true_returns_clear_error_when_execution_unavailabl
     monkeypatch.setattr(
         orchestrator.risk_scorer,
         "score_portfolio",
-        lambda *args, **kwargs: {"risk_score": 10.0, "level": "low", "components": {"delta_exposure": 0.0, "iv_rank_shift": 0.0, "drawdown_pct": 0.0}},
+        lambda *args, **kwargs: {"risk_score": 10.0, "level": "low", "components": {"capital_at_risk": 0.0, "volatility": 0.0, "drawdown_pct": 0.0}},
     )
 
     result = orchestrator.evaluate_symbol("AAPL", execute=True)
