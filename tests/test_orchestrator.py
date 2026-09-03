@@ -74,8 +74,8 @@ def test_orchestrator_uses_live_risk_inputs_and_defense_path(monkeypatch):
         SimpleNamespace(
             get_account=lambda: SimpleNamespace(equity=1000.0),
             get_all_positions=lambda: [
-                {"market_value": "1000", "unrealized_plpc": "-0.50"},
-                {"market_value": "0", "unrealized_plpc": "0.00"},
+                {"symbol": "AAPL", "market_value": "1000", "unrealized_plpc": "-0.50"},
+                {"symbol": "AAPL", "market_value": "0", "unrealized_plpc": "0.00"},
             ],
         ),
     )
@@ -86,6 +86,49 @@ def test_orchestrator_uses_live_risk_inputs_and_defense_path(monkeypatch):
     assert result["risk"]["risk_score"] >= 45
     assert result["risk"]["components"]["delta_exposure"] > 0.9
     assert result["strategy"]["strategy"] == "protective_put"
+
+
+def test_orchestrator_unheld_symbol_not_hijacked_by_portfolio_drawdown(monkeypatch):
+    orchestrator = Orchestrator()
+
+    monkeypatch.setattr(
+        orchestrator.market_agent,
+        "get_bars",
+        lambda *args, **kwargs: [{"close": 100.0, "timestamp": "2026-01-01"}],
+    )
+    monkeypatch.setattr(orchestrator.market_agent, "get_latest_price", lambda *args, **kwargs: 101.0)
+    monkeypatch.setattr(
+        orchestrator.signal_engine,
+        "generate_signal",
+        lambda *args, **kwargs: {"signal": "bullish", "score": 50},
+    )
+    monkeypatch.setattr(orchestrator.explainer, "explain", lambda *args, **kwargs: "entry explanation")
+    monkeypatch.setattr(
+        orchestrator.strategy_selector,
+        "select_entry_strategy",
+        lambda *args, **kwargs: {"symbol": "NVDA", "direction": "long", "option_type": "call", "strategy": "long_call", "option_symbol": "NVDA260925C00120000"},
+    )
+
+    def fail_hedge(*args, **kwargs):
+        raise AssertionError("must not hedge/exit a symbol we do not hold")
+
+    monkeypatch.setattr(orchestrator.strategy_selector, "select_hedge_strategy", fail_hedge)
+
+    # The book is deeply underwater on AAPL, but we are evaluating NVDA, which we do not hold.
+    orchestrator.execution_agent.client = SimpleNamespace(
+        get_account=lambda: SimpleNamespace(equity=1000.0),
+        get_all_positions=lambda: [
+            {"symbol": "AAPL", "market_value": "1000", "unrealized_plpc": "-0.90"},
+        ],
+    )
+
+    result = orchestrator.evaluate_symbol("NVDA", execute=False)
+
+    assert result["path"] == "entry"
+    assert result["has_symbol_position"] is False
+    assert result["strategy"]["strategy"] == "long_call"
+    # Portfolio-wide risk still reflects the underwater book, and exceeds this symbol's own risk.
+    assert result["portfolio_risk"]["risk_score"] > result["risk"]["risk_score"]
 
 
 def test_orchestrator_defense_execute_path_uses_real_option_symbol(monkeypatch):

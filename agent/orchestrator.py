@@ -87,18 +87,35 @@ class Orchestrator:
         except Exception:
             return 0.0
 
-    def _compute_live_risk_inputs(self, volatility_rank: float) -> Dict[str, float]:
-        positions = list(self._get_open_positions())
-        account = None
+    @staticmethod
+    def _filter_positions_for_symbol(positions: Iterable[Any], symbol: str) -> list:
+        """Return only the positions (stock or option) whose underlying is `symbol`."""
+        symbol = (symbol or "").upper().strip()
+        matched = []
+        for position in positions:
+            position_symbol = position.get("symbol") if isinstance(position, dict) else getattr(position, "symbol", None)
+            if position_symbol and ExecutionAgent._underlying_root(str(position_symbol)) == symbol:
+                matched.append(position)
+        return matched
+
+    def _get_account_equity(self) -> float:
+        equity = 0.0
         if self.execution_agent is not None and self.execution_agent.client is not None:
             try:
                 account = self.execution_agent.client.get_account()
+                equity = float(getattr(account, "equity", 0.0) or 0.0)
             except Exception:
-                account = None
+                equity = 0.0
+        return equity if equity > 0 else 1.0
 
-        equity = 0.0
-        if account is not None:
-            equity = float(getattr(account, "equity", 0.0) or 0.0)
+    def _compute_live_risk_inputs(self, volatility_rank: float) -> Dict[str, float]:
+        """Portfolio-wide risk inputs across every open position."""
+        positions = list(self._get_open_positions())
+        equity = self._get_account_equity()
+        return self._risk_inputs_from_positions(positions, equity, volatility_rank)
+
+    def _risk_inputs_from_positions(self, positions: Iterable[Any], equity: float, volatility_rank: float) -> Dict[str, float]:
+        positions = list(positions)
         if equity <= 0:
             equity = 1.0
 
@@ -239,19 +256,34 @@ class Orchestrator:
         latest_price = self.market_agent.get_latest_price(symbol)
 
         volatility_rank_value = self._extract_volatility_rank(bars)
-        risk_inputs = self._compute_live_risk_inputs(volatility_rank_value)
+        open_positions = list(self._get_open_positions())
+        equity = self._get_account_equity()
+        symbol_positions = self._filter_positions_for_symbol(open_positions, symbol)
+        has_symbol_position = len(symbol_positions) > 0
+
+        # The entry/defense decision for THIS symbol is driven by this symbol's own risk, not the whole
+        # book, so a bullish signal on an unrelated name is never hijacked into "exit" just because other
+        # positions are underwater. Portfolio-wide risk is reported separately for monitoring.
+        symbol_inputs = self._risk_inputs_from_positions(symbol_positions, equity, volatility_rank_value)
         risk = self.risk_scorer.score_portfolio(
-            delta_exposure=risk_inputs["delta_exposure"],
-            volatility=risk_inputs["volatility"],
-            drawdown_pct=risk_inputs["drawdown_pct"],
+            delta_exposure=symbol_inputs["delta_exposure"],
+            volatility=symbol_inputs["volatility"],
+            drawdown_pct=symbol_inputs["drawdown_pct"],
+        )
+        portfolio_inputs = self._risk_inputs_from_positions(open_positions, equity, volatility_rank_value)
+        portfolio_risk = self.risk_scorer.score_portfolio(
+            delta_exposure=portfolio_inputs["delta_exposure"],
+            volatility=portfolio_inputs["volatility"],
+            drawdown_pct=portfolio_inputs["drawdown_pct"],
         )
 
         entry_strategy = self.strategy_selector.select_entry_strategy(signal["signal"], symbol, current_price=latest_price)
         path = "entry"
         strategy = entry_strategy
 
-        if float(risk["risk_score"]) >= 45.0:
-            position_direction = self._get_position_direction(self._get_open_positions())
+        # Only defend a symbol we actually hold and whose own risk is elevated; otherwise trade the signal.
+        if has_symbol_position and float(risk["risk_score"]) >= 45.0:
+            position_direction = self._get_position_direction(symbol_positions)
             hedge_strategy = self.strategy_selector.select_hedge_strategy(
                 risk["risk_score"],
                 position_direction,
@@ -282,6 +314,8 @@ class Orchestrator:
             "status": "ok",
             "signal": signal,
             "risk": risk,
+            "portfolio_risk": portfolio_risk,
+            "has_symbol_position": has_symbol_position,
             "strategy": strategy,
             "entry_strategy": entry_strategy,
             "path": path,
