@@ -263,13 +263,27 @@ class StrategySelector:
                 option_symbol = self.get_option_symbol_for_signal(symbol, option_type, current_price=current_price) if symbol else None
                 reason = "Medium risk detected; hedging exposure with a covered call."
         elif risk_score >= 25:
-            # Collar is a two-leg strategy and is not safely executable in this single-leg execution layer.
-            # For now we keep the position open rather than pretending to submit a full collar order.
             if direction == "long":
-                strategy = "hold"
-                option_type = "none"
-                option_symbol = None
-                reason = "Moderate risk; collar is a two-leg hedge and is not safely implemented in this single-leg execution layer. Holding for now."
+                # Collar = long protective put (below spot) + short covered call (above spot), submitted as
+                # a single two-leg (mleg) order. Bounds downside while capping upside on a long position.
+                price = float(current_price) if current_price is not None else 100.0
+                put_symbol = self.get_option_symbol_for_signal(symbol, "put", current_price=price * 0.95) if symbol else None
+                call_symbol = self.get_option_symbol_for_signal(symbol, "call", current_price=price * 1.05) if symbol else None
+                legs = None
+                if put_symbol and call_symbol:
+                    legs = [
+                        {"symbol": put_symbol, "ratio_qty": "1", "side": "buy", "position_intent": "buy_to_open"},
+                        {"symbol": call_symbol, "ratio_qty": "1", "side": "sell", "position_intent": "sell_to_open"},
+                    ]
+                return {
+                    "strategy": "collar",
+                    "option_type": "collar",
+                    "option_symbol": None,
+                    "legs": legs,
+                    "put_symbol": put_symbol,
+                    "call_symbol": call_symbol,
+                    "reason": "Moderate risk on a long position; establishing a collar (long put + short call) to bound downside.",
+                }
             else:
                 strategy = "covered_call"
                 option_type = "call"

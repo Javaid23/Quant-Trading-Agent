@@ -239,6 +239,35 @@ class ExecutionAgent:
             "option_type": (option_type or "unknown").upper(),
         }
 
+    def place_option_mleg_order(self, legs: list, qty: int = 1) -> Dict[str, Any]:
+        """Submit a multi-leg (e.g. collar) option order, falling back to the protective leg on failure."""
+        if not legs or not all(isinstance(leg, dict) and leg.get("symbol") for leg in legs):
+            raise ValueError("legs with symbols are required for a multi-leg order")
+
+        clock = self.get_market_clock()
+        if not clock["is_open"]:
+            return self._market_closed_response("option_mleg", clock.get("next_open"))
+
+        try:
+            response = self.client.place_option_mleg_order(legs=legs, qty=int(qty))
+            return {
+                "id": response.get("id") if isinstance(response, dict) else getattr(response, "id", None),
+                "status": response.get("status") if isinstance(response, dict) else getattr(response, "status", None),
+                "order_type": "option_mleg",
+                "legs": legs,
+                "submitted": True,
+            }
+        except Exception as exc:
+            # Multi-leg can be rejected (approval level, unlisted spread). Fall back to the buy (protective)
+            # leg so the position is still hedged rather than left exposed.
+            buy_leg = next((leg for leg in legs if str(leg.get("side", "")).lower() == "buy"), None)
+            if buy_leg and buy_leg.get("symbol"):
+                fallback = self.place_option_order(str(buy_leg["symbol"]), qty=int(qty), side="buy")
+                if isinstance(fallback, dict):
+                    fallback["mleg_fallback"] = f"Multi-leg order failed ({exc}); placed the protective leg only."
+                return fallback
+            return {"status": "error", "submitted": False, "message": str(exc)}
+
     @staticmethod
     def _underlying_root(position_symbol: str) -> str:
         """Return the underlying ticker for a position symbol.
@@ -320,6 +349,16 @@ class ExecutionAgent:
             # No specific contract given: close whatever is actually open for this underlying. Never fall
             # back to a market sell, which would open a brand-new short instead of exiting the position.
             return self.close_positions_for_symbol(symbol)
+
+        if strategy_name == "collar":
+            legs = strategy.get("legs")
+            if legs:
+                return self.place_option_mleg_order(legs, qty=qty)
+            put_symbol = strategy.get("put_symbol")
+            if put_symbol:
+                # Could not build both legs; hedge the downside with the protective put alone.
+                return self.place_option_order(str(put_symbol), qty=qty, side="buy", option_type="put")
+            return {"status": "skipped", "submitted": False, "message": "Collar strategy is missing option symbols."}
 
         if option_type in {"call", "put"}:
             option_symbol = strategy.get("option_symbol")

@@ -182,6 +182,50 @@ class AlpacaMCPClient:
             )
         )
 
+    async def aplace_option_mleg_order(
+        self,
+        legs: List[Dict[str, Any]],
+        qty: int = 1,
+        type: str = "market",
+        time_in_force: str = "day",
+        limit_price: float | str | None = None,
+        client_order_id: str | None = None,
+    ) -> Dict[str, Any]:
+        if not legs:
+            raise ValueError("legs are required for a multi-leg order")
+        order_body: Dict[str, Any] = {
+            "qty": str(int(qty)),
+            "type": type,
+            "time_in_force": time_in_force,
+            "order_class": "mleg",
+            "legs": legs,
+        }
+        if limit_price is not None:
+            order_body["limit_price"] = str(limit_price)
+        if client_order_id is not None:
+            order_body["client_order_id"] = client_order_id
+        return await self._call_tool("place_option_order", order_body)
+
+    def place_option_mleg_order(
+        self,
+        legs: List[Dict[str, Any]],
+        qty: int = 1,
+        type: str = "market",
+        time_in_force: str = "day",
+        limit_price: float | str | None = None,
+        client_order_id: str | None = None,
+    ) -> Dict[str, Any]:
+        return asyncio.run(
+            self.aplace_option_mleg_order(
+                legs=legs,
+                qty=qty,
+                type=type,
+                time_in_force=time_in_force,
+                limit_price=limit_price,
+                client_order_id=client_order_id,
+            )
+        )
+
     async def aclose_position(self, symbol_or_asset_id: str, qty: str | int | None = None, percentage: str | int | None = None) -> Dict[str, Any]:
         payload = {"symbol_or_asset_id": symbol_or_asset_id}
         if qty is not None:
