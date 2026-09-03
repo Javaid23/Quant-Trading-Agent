@@ -1,3 +1,76 @@
 {
-  "trades": []
+  "trades": [
+    {
+      "timestamp": "2026-09-03T16:50:11.321090+00:00",
+      "symbol": "GOOGL260925P00340000",
+      "side": "buy",
+      "strategy": "long_put",
+      "direction": "short",
+      "option_type": "put",
+      "status": "pending_new",
+      "order_id": "7d87b1aa-3d91-42bd-a7b8-424f9f77b962",
+      "explanation": "Signal=bearish. Risk score=0.6 (low). Action=long_put. This is a paper trading system and this explanation is deterministic.",
+      "market_context": "Autonomous multi-ticker scan"
+    },
+    {
+      "timestamp": "2026-09-03T16:51:19.200357+00:00",
+      "symbol": "AMZN260925P00260000",
+      "side": "buy",
+      "strategy": "long_put",
+      "direction": "short",
+      "option_type": "put",
+      "status": "pending_new",
+      "order_id": "f317129f-b375-4c00-8976-abe06b1e6468",
+      "explanation": "Signal=bearish. Risk score=8.4 (low). Action=long_put. This is a paper trading system and this explanation is deterministic.",
+      "market_context": "Autonomous multi-ticker scan"
+    },
+    {
+      "timestamp": "2026-09-03T16:52:28.959353+00:00",
+      "symbol": "META260925C00615000",
+      "side": "buy",
+      "strategy": "long_call",
+      "direction": "long",
+      "option_type": "call",
+      "status": "pending_new",
+      "order_id": "15740fac-0aba-4cdb-9c08-e905e3406c3a",
+      "explanation": "Signal=bullish. Risk score=3.0 (low). Action=long_call. This is a paper trading system and this explanation is deterministic.",
+      "market_context": "Autonomous multi-ticker scan"
+    },
+    {
+      "timestamp": "2026-09-03T16:53:41.625716+00:00",
+      "symbol": "TSLA260925C00380000",
+      "side": "buy",
+      "strategy": "long_call",
+      "direction": "long",
+      "option_type": "call",
+      "status": "pending_new",
+      "order_id": "f1473f3b-69b4-4d18-9c37-e8189e29316a",
+      "explanation": "Signal=bullish. Risk score=12.6 (low). Action=long_call. This is a paper trading system and this explanation is deterministic.",
+      "market_context": "Autonomous multi-ticker scan"
+    },
+    {
+      "timestamp": "2026-09-03T16:54:53.259891+00:00",
+      "symbol": "AMD260925P00460000",
+      "side": "buy",
+      "strategy": "long_put",
+      "direction": "short",
+      "option_type": "put",
+      "status": "pending_new",
+      "order_id": "46c9d421-9863-48d4-8abc-cf051a433eaa",
+      "explanation": "Signal=bearish. Risk score=0.3 (low). Action=long_put. This is a paper trading system and this explanation is deterministic.",
+      "market_context": "Autonomous multi-ticker scan"
+    },
+    {
+      "timestamp": "2026-09-03T16:56:06.312187+00:00",
+      "symbol": "NFLX260925C00082000",
+      "side": "buy",
+      "strategy": "long_call",
+      "direction": "long",
+      "option_type": "call",
+      "status": "pending_new",
+      "order_id": "37b2bd72-4649-4a5a-ac91-1211be43b325",
+      "explanation": "Signal=bullish. Risk score=14.4 (low). Action=long_call. This is a paper trading system and this explanation is deterministic.",
+      "market_context": "Autonomous multi-ticker scan"
+    }
+  ]
 }

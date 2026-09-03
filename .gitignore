@@ -10,6 +10,11 @@ __pycache__/
 venv/
 .env.local
 
+# Tooling / test artifacts
+.pytest_cache/
+.qodo/
+.claude/
+
 # OS / editor junk
 .DS_Store
 Thumbs.db
