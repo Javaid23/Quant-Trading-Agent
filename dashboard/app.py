@@ -50,21 +50,38 @@ def fetch_daily_bars(symbol: str, limit: int) -> pd.DataFrame:
         return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_portfolio_history():
-    """Alpaca portfolio equity curve for the account (best effort)."""
+@st.cache_data(ttl=180, show_spinner=False)
+def fetch_portfolio_history(period: str = "1M", timeframe: str = "1D") -> pd.DataFrame:
+    """Alpaca portfolio equity curve (unix seconds + equity) for the account (best effort)."""
     try:
         from alpaca.trading.client import TradingClient
         from alpaca.trading.requests import GetPortfolioHistoryRequest
 
         client = TradingClient(os.getenv("ALPACA_API_KEY"), os.getenv("ALPACA_SECRET_KEY"), paper=True)
-        history = client.get_portfolio_history(GetPortfolioHistoryRequest(period="1M", timeframe="1D"))
+        history = client.get_portfolio_history(GetPortfolioHistoryRequest(period=period, timeframe=timeframe))
         ts = list(getattr(history, "timestamp", []) or [])
         eq = list(getattr(history, "equity", []) or [])
-        df = pd.DataFrame({"time": pd.to_datetime(ts, unit="s"), "equity": [fnum(v) for v in eq]})
-        return df.dropna()
+        rows = [(int(t), fnum(e)) for t, e in zip(ts, eq) if e is not None and fnum(e) > 0]
+        return pd.DataFrame(rows, columns=["ts", "equity"]).drop_duplicates("ts")
     except Exception:
-        return pd.DataFrame(columns=["time", "equity"])
+        return pd.DataFrame(columns=["ts", "equity"])
+
+
+def equity_area_config(df: pd.DataFrame, up: bool):
+    color = "#34d399" if up else "#f87171"
+    top = "rgba(52,211,153,0.28)" if up else "rgba(248,113,113,0.28)"
+    data = [{"time": int(r["ts"]), "value": round(float(r["equity"]), 2)} for _, r in df.iterrows()]
+    return [{
+        "chart": {
+            "height": 320,
+            "layout": {"background": {"type": "solid", "color": "#171d28"}, "textColor": "#8b93a7", "fontFamily": "Inter, sans-serif"},
+            "grid": {"vertLines": {"color": "rgba(148,163,184,0.04)"}, "horzLines": {"color": "rgba(148,163,184,0.06)"}},
+            "rightPriceScale": {"borderColor": "rgba(148,163,184,0.12)"},
+            "timeScale": {"borderColor": "rgba(148,163,184,0.12)", "timeVisible": True, "secondsVisible": False},
+            "crosshair": {"mode": 1},
+        },
+        "series": [{"type": "Area", "data": data, "options": {"lineColor": color, "lineWidth": 2, "topColor": top, "bottomColor": "rgba(23,29,40,0.02)", "priceLineVisible": False}}],
+    }]
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -335,18 +352,40 @@ result = st.session_state.get("result")
 
 # ----------------------------- Dashboard -----------------------------
 with tab_dash:
-    left, right = st.columns([1.5, 1])
+    left, right = st.columns([1.6, 1])
     with left:
-        st.markdown('<div class="section-h">◈ Portfolio Equity (Alpaca)</div>', unsafe_allow_html=True)
-        hist = fetch_portfolio_history()
+        hdr, toggle = st.columns([1, 1])
+        with hdr:
+            st.markdown('<div class="section-h">◈ Portfolio Performance · <span style="color:#34d399;">● LIVE</span></div>', unsafe_allow_html=True)
+        with toggle:
+            tf = st.segmented_control("tf", ["1D", "1W", "1M"], default="1M", label_visibility="collapsed", key="perf_tf") or "1M"
+        period, tframe = {"1D": ("1D", "5Min"), "1W": ("1W", "1H"), "1M": ("1M", "1D")}[tf]
+        hist = fetch_portfolio_history(period, tframe)
+
         if hist is not None and not hist.empty and len(hist) > 1:
-            area = alt.Chart(hist).mark_area(
-                line={"color": "#34d399"}, color=alt.Gradient(
-                    gradient="linear", stops=[alt.GradientStop(color="rgba(52,211,153,0.30)", offset=0), alt.GradientStop(color="rgba(52,211,153,0.02)", offset=1)], x1=1, x2=1, y1=1, y2=0)
-            ).encode(x=alt.X("time:T", title=None), y=alt.Y("equity:Q", title=None, scale=alt.Scale(zero=False))).properties(height=300)
-            st.altair_chart(area, width="stretch")
+            first, last = float(hist["equity"].iloc[0]), float(hist["equity"].iloc[-1])
+            net = last - first
+            ret = (net / first * 100) if first else 0.0
+            up = net >= 0
+            pcolor = "#34d399" if up else "#f87171"
+            s = st.columns(3)
+
+            def stat(col, label, value, color="#f4f6fb"):
+                col.markdown(f'<div class="kpi-label">{label}</div><div style="font-family:JetBrains Mono,monospace;font-size:1.4rem;font-weight:700;color:{color};margin-top:0.1rem;">{value}</div>', unsafe_allow_html=True)
+
+            stat(s[0], "Portfolio Equity", f"${last:,.2f}")
+            stat(s[1], "Net P/L", f"{'+' if up else ''}{net:,.2f}", pcolor)
+            stat(s[2], "Return", f"{'+' if up else ''}{ret:.2f}%", pcolor)
+            st.write("")
+            if HAS_CHARTS:
+                try:
+                    renderLightweightCharts(equity_area_config(hist, up), key=f"eq_{tf}")
+                except Exception:
+                    st.line_chart(hist.assign(t=pd.to_datetime(hist["ts"], unit="s")), x="t", y="equity", height=300)
+            else:
+                st.line_chart(hist.assign(t=pd.to_datetime(hist["ts"], unit="s")), x="t", y="equity", height=300)
         else:
-            st.caption("Equity history will populate as the account trades over more days.")
+            st.caption("Equity history will populate as the account trades. Try a wider timeframe.")
     with right:
         st.markdown('<div class="section-h">◈ Live Watchlist</div>', unsafe_allow_html=True)
         wl = st.session_state.get("wl_quotes")
