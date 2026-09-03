@@ -18,9 +18,11 @@ class Explainer:
     deterministic explanation is returned instead so the agent never blocks on the network.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "meta-llama/Meta-Llama-3.1-8B-Instruct"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or os.getenv("FEATHERLESS_API_KEY")
-        self.model = model
+        # Model is configurable via FEATHERLESS_MODEL so a working (non-gated) model can be selected
+        # without a code change. The default is gated on Featherless and needs a HuggingFace OAuth link.
+        self.model = model or os.getenv("FEATHERLESS_MODEL") or "meta-llama/Meta-Llama-3.1-8B-Instruct"
         self._cache: Dict[Tuple[str, object, str], str] = {}
 
     @staticmethod
