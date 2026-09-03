@@ -236,6 +236,72 @@ class ExecutionAgent:
             "option_type": (option_type or "unknown").upper(),
         }
 
+    @staticmethod
+    def _underlying_root(position_symbol: str) -> str:
+        """Return the underlying ticker for a position symbol.
+
+        OCC option symbols end with a 6-digit expiry, a C/P flag, and an 8-digit strike (15 chars),
+        e.g. 'AAPL260925P00325000' -> 'AAPL'. Plain equity symbols are returned unchanged.
+        """
+        symbol = (position_symbol or "").upper().strip()
+        if (
+            len(symbol) >= 19
+            and symbol[-9] in {"C", "P"}
+            and symbol[-15:-9].isdigit()
+            and symbol[-8:].isdigit()
+        ):
+            return symbol[:-15]
+        return symbol
+
+    def close_positions_for_symbol(self, symbol: str) -> Dict[str, Any]:
+        """Close every open position (stock or option) for the given underlying.
+
+        This is the real 'exit to protect capital' action: it reduces the existing book rather than
+        opening anything new. If nothing is open for the symbol it places no order and says so, so a
+        defensive exit can never accidentally establish a fresh short.
+        """
+        symbol = (symbol or "").upper().strip()
+        try:
+            positions = self.client.get_all_positions() or []
+        except Exception as exc:
+            return {"status": "error", "submitted": False, "symbol": symbol, "message": f"Could not fetch positions: {exc}"}
+
+        matches = []
+        for position in positions:
+            if isinstance(position, dict):
+                position_symbol = position.get("symbol")
+            else:
+                position_symbol = getattr(position, "symbol", None)
+            if position_symbol and self._underlying_root(str(position_symbol)) == symbol:
+                matches.append(str(position_symbol).upper())
+
+        if not matches:
+            return {
+                "status": "no_position",
+                "submitted": False,
+                "symbol": symbol,
+                "message": f"No open position for {symbol}; nothing to exit and no new order placed.",
+            }
+
+        closed = []
+        for position_symbol in matches:
+            try:
+                if self._infer_option_type(position_symbol) is not None:
+                    closed.append(self.close_option_position_with_limit_fallback(position_symbol))
+                else:
+                    response = self.client.close_position(position_symbol)
+                    closed.append({
+                        "symbol": position_symbol,
+                        "order_type": "close_position",
+                        "status": response.get("status") if isinstance(response, dict) else getattr(response, "status", None),
+                        "id": response.get("id") if isinstance(response, dict) else getattr(response, "id", None),
+                        "submitted": True,
+                    })
+            except Exception as exc:
+                closed.append({"symbol": position_symbol, "submitted": False, "error": str(exc)})
+
+        return {"status": "exit_submitted", "submitted": True, "symbol": symbol, "closed": closed}
+
     def execute_strategy(self, symbol: str, strategy: Dict[str, Any], qty: int = 1) -> Dict[str, Any]:
         strategy_name = str(strategy.get("strategy", "hold")).lower()
         option_type = str(strategy.get("option_type", "none")).lower()
@@ -248,8 +314,9 @@ class ExecutionAgent:
             option_symbol = strategy.get("option_symbol")
             if option_symbol:
                 return self.close_option_position_with_limit_fallback(str(option_symbol), qty=qty)
-            side = "sell"
-            return self.place_market_order(symbol=symbol, qty=qty, side=side)
+            # No specific contract given: close whatever is actually open for this underlying. Never fall
+            # back to a market sell, which would open a brand-new short instead of exiting the position.
+            return self.close_positions_for_symbol(symbol)
 
         if option_type in {"call", "put"}:
             option_symbol = strategy.get("option_symbol")

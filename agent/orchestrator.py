@@ -98,10 +98,14 @@ class Orchestrator:
 
             total_market_value += market_value
 
+            # Drawdown must reflect losses only. This previously used abs(), so a winning position
+            # (e.g. +50%) was counted as 50% drawdown and inflated the risk score, pushing every symbol
+            # into the defensive path. Only negative unrealized P&L contributes to drawdown now.
             if unrealized_plpc is not None:
-                loss_pct = abs(float(unrealized_plpc))
+                plpc = float(unrealized_plpc)
+                loss_pct = abs(plpc) if plpc < 0 else 0.0
             elif cost_basis > 0:
-                loss_pct = abs(unrealized_pl / cost_basis)
+                loss_pct = abs(unrealized_pl / cost_basis) if unrealized_pl < 0 else 0.0
             else:
                 loss_pct = 0.0
 
