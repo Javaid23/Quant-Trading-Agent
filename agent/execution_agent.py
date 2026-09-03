@@ -6,9 +6,6 @@ from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 from alpaca.data.historical import OptionHistoricalDataClient
 from alpaca.data.requests import OptionLatestTradeRequest, OptionLatestQuoteRequest
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
-from alpaca.trading.enums import OrderSide, OrderType, PositionIntent, TimeInForce
 
 from alpaca_mcp_wrapper.alpaca_mcp_client import AlpacaMCPClient
 
@@ -31,6 +28,18 @@ class ExecutionAgent:
             raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set.")
 
         self.client = AlpacaMCPClient(api_key=self.api_key, secret_key=self.secret_key)
+
+    @staticmethod
+    def _infer_option_type(option_symbol: str) -> str | None:
+        option_symbol = (option_symbol or "").upper().strip()
+        if len(option_symbol) < 10:
+            return None
+        call_put = option_symbol[-9]
+        if call_put == "C":
+            return "call"
+        if call_put == "P":
+            return "put"
+        return None
 
     def get_market_clock(self) -> Dict[str, Any]:
         clock = self.client.get_clock()
@@ -93,12 +102,6 @@ class ExecutionAgent:
         if not clock["is_open"]:
             return self._market_closed_response("market", clock.get("next_open"))
 
-        order = MarketOrderRequest(
-            symbol=symbol,
-            qty=qty,
-            side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
-            time_in_force=TimeInForce.DAY,
-        )
         response = self.client.place_stock_order(symbol=symbol, side=side, qty=qty, type="market", time_in_force="day")
         return {
             "id": response.get("id") if isinstance(response, dict) else getattr(response, "id", None),
@@ -177,20 +180,15 @@ class ExecutionAgent:
             "retrying with a limit order at $0.01 because no last price is available."
         )
 
-        limit_order = LimitOrderRequest(
-            symbol=option_symbol,
-            qty=float(qty),
-            side=OrderSide.SELL,
-            type=OrderType.LIMIT,
-            time_in_force=TimeInForce.DAY,
-            position_intent=PositionIntent.SELL_TO_CLOSE,
-            limit_price=fallback_price,
-        )
         response = self.client.place_option_order(
             option_symbol=option_symbol,
             qty=qty,
             side="sell",
-            option_type="put",
+            option_type=self._infer_option_type(option_symbol),
+            type="limit",
+            time_in_force="day",
+            position_intent="sell_to_close",
+            limit_price=fallback_price,
         )
         return {
             "symbol": option_symbol,
@@ -222,17 +220,11 @@ class ExecutionAgent:
         if not clock["is_open"]:
             return self._market_closed_response("option_market", clock.get("next_open"))
 
-        order = MarketOrderRequest(
-            symbol=option_symbol,
-            qty=qty,
-            side=OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL,
-            time_in_force=TimeInForce.DAY,
-        )
         response = self.client.place_option_order(
             option_symbol=option_symbol,
             qty=qty,
             side=side,
-            option_type=(option_type or "unknown"),
+            option_type=(option_type or self._infer_option_type(option_symbol) or "unknown"),
         )
         return {
             "id": response.get("id") if isinstance(response, dict) else getattr(response, "id", None),

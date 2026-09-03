@@ -123,9 +123,9 @@ class Orchestrator:
         # the basis is valid. This avoids division by near-zero values from older bad positions.
         drawdown_pct = max(0.0, worst_negative_unrealized_plpc * 100.0)
 
-        # Simplified placeholder until we track real IV rank history in the account. We estimate it from how far the current signal
-        # is from neutral, which is a practical proxy for conviction but not actual IV rank or IV percentile.
-        iv_rank_shift = max(0.0, abs(float(signal_score) - 50.0) / 10.0)
+        # Simplified placeholder until we track real IV rank history in the account.
+        # The signal engine is centered around 0, so the proxy should be zero for neutral signals and grow with conviction.
+        iv_rank_shift = max(0.0, abs(float(signal_score)) / 10.0)
 
         return {
             "delta_exposure": float(delta_exposure),
@@ -201,7 +201,14 @@ class Orchestrator:
 
         execution_result = None
         if execute:
-            execution_result = self.execution_agent.execute_strategy(symbol, strategy, qty=qty)
+            if self.execution_agent is None:
+                execution_result = {
+                    "status": "execution_unavailable",
+                    "submitted": False,
+                    "message": "Execution is unavailable because Alpaca credentials or the MCP execution agent are not configured.",
+                }
+            else:
+                execution_result = self.execution_agent.execute_strategy(symbol, strategy, qty=qty)
 
         return {
             "symbol": symbol,

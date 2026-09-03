@@ -160,12 +160,22 @@ class AlpacaMCPClient:
         qty: int,
         side: str,
         option_type: str | None = None,
+        type: str = "market",
+        time_in_force: str = "day",
+        position_intent: str | None = None,
+        limit_price: float | str | None = None,
+        client_order_id: str | None = None,
     ) -> Dict[str, Any]:
         return asyncio.run(
             self.aplace_option_order(
                 option_symbol=option_symbol,
                 qty=qty,
                 side=side,
+                type=type,
+                time_in_force=time_in_force,
+                position_intent=position_intent,
+                limit_price=limit_price,
+                client_order_id=client_order_id,
                 option_type=option_type,
             )
         )

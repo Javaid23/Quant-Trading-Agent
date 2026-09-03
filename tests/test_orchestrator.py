@@ -145,3 +145,51 @@ def test_orchestrator_defense_execute_path_uses_real_option_symbol(monkeypatch):
     assert result["strategy"]["option_symbol"] == "AAPL260925P00155000"
     assert captured["strategy"]["option_symbol"] == "AAPL260925P00155000"
     assert captured["strategy"]["option_symbol"] is not None
+
+
+def test_orchestrator_execute_true_returns_clear_error_when_execution_unavailable(monkeypatch):
+    orchestrator = Orchestrator()
+    orchestrator.execution_agent = None
+
+    monkeypatch.setattr(
+        orchestrator.market_agent,
+        "get_bars",
+        lambda *args, **kwargs: [{"close": 100.0, "timestamp": "2026-01-01"}],
+    )
+    monkeypatch.setattr(orchestrator.market_agent, "get_latest_price", lambda *args, **kwargs: 101.0)
+    monkeypatch.setattr(
+        orchestrator.signal_engine,
+        "generate_signal",
+        lambda *args, **kwargs: {"signal": "bullish", "score": 50.0},
+    )
+    monkeypatch.setattr(
+        orchestrator.strategy_selector,
+        "select_entry_strategy",
+        lambda *args, **kwargs: {"symbol": "AAPL", "direction": "long", "option_type": "call", "strategy": "long_call", "option_symbol": "AAPL260925C00100000"},
+    )
+    monkeypatch.setattr(
+        orchestrator.explainer,
+        "explain",
+        lambda *args, **kwargs: "No execution agent available",
+    )
+    monkeypatch.setattr(
+        orchestrator.risk_scorer,
+        "score_portfolio",
+        lambda *args, **kwargs: {"risk_score": 10.0, "level": "low", "components": {"delta_exposure": 0.0, "iv_rank_shift": 0.0, "drawdown_pct": 0.0}},
+    )
+
+    result = orchestrator.evaluate_symbol("AAPL", execute=True)
+
+    assert result["execution"]["status"] == "execution_unavailable"
+    assert result["execution"]["submitted"] is False
+    assert "not configured" in result["execution"]["message"]
+
+
+def test_orchestrator_neutral_signal_yields_zero_iv_shift(monkeypatch):
+    orchestrator = Orchestrator()
+    monkeypatch.setattr(orchestrator, "_get_open_positions", lambda: [])
+    orchestrator.execution_agent.client = SimpleNamespace(get_account=lambda: SimpleNamespace(equity=1000.0))
+
+    risk_inputs = orchestrator._compute_live_risk_inputs(0.0)
+
+    assert risk_inputs["iv_rank_shift"] == 0.0
