@@ -34,19 +34,41 @@ Many retail trading tools are either too opaque or too simplistic. This project 
 
 ## Setup
 
-1. Create a Python virtual environment.
-2. Install dependencies:
-   pip install -r requirements.txt
-3. Copy .env.example to .env and fill in your keys.
-4. Run the app with Streamlit:
-   streamlit run dashboard/app.py
-5. Analyze a ticker from the dashboard watchlist or search box.
+1. Clone the repository with the Alpaca MCP server included as a submodule:
+   - If you are cloning for the first time:
+     `git clone --recurse-submodules https://github.com/Javaid23/Quant-Trading-Agent.git`
+   - If you already cloned the repo:
+     `git submodule update --init --recursive`
+2. Create and activate a Python virtual environment.
+3. Install the main project dependencies:
+   `pip install -r requirements.txt`
+4. Install the Alpaca MCP server from the local submodule so the executable is available to the app:
+   `pip install -e ./mcp_server`
+5. Copy `.env.example` to `.env` and fill in your Alpaca paper-trading keys and Featherless key.
+6. Start the Alpaca MCP server in a separate terminal:
+   `alpaca-mcp-server --transport stdio`
+7. Run the Streamlit app in another terminal:
+   `streamlit run dashboard/app.py`
+8. Analyze a ticker from the dashboard watchlist or search box.
+
+### MCP server details
+
+This repository keeps `mcp_server/` as a git submodule pointing to the official [`alpacahq/alpaca-mcp-server`](https://github.com/alpacahq/alpaca-mcp-server) repository. That means the app stays reproducible while still using the upstream server source directly from the checked-in submodule.
+
+If you need to refresh the submodule later, run:
+
+`git submodule update --init --recursive`
+
+The MCP server exposes its CLI after installation, so the same environment can be used by the app and by manual probes:
+
+`alpaca-mcp-server --transport stdio`
 
 ## Security
 
 - Never commit .env
 - Only ever use the Alpaca paper endpoint for this project
 - Keep API keys in local environment variables only
+- Keep the `mcp_server/` submodule checked out and installed locally; the trading app depends on it at runtime
 
 ## Demo narrative
 
