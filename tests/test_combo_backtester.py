@@ -11,7 +11,17 @@ def test_run_combo_returns_expected_keys():
     prices = list(np.linspace(100, 140, 80))
     result = ComboBacktester().run_combo(prices, ("rsi", "macd", "bollinger", "ma"))
 
-    assert set(result) == {"total_trades", "win_rate", "final_equity", "total_return_pct"}
+    assert set(result) == {"total_trades", "win_rate", "final_equity", "total_return_pct", "sharpe", "max_drawdown_pct"}
+
+
+def test_out_of_sample_only_trades_in_the_test_region():
+    prices = list(np.linspace(100, 220, 160))
+    full = ComboBacktester().run_combo(prices, ("macd", "ma"))
+    oos = ComboBacktester().run_combo(prices, ("macd", "ma"), oos_from=0.7)
+
+    # OOS suppresses trades placed in the first 70% of the series, so it trades no more than the full run.
+    assert oos["total_trades"] <= full["total_trades"]
+    assert "sharpe" in oos and "max_drawdown_pct" in oos
 
 
 def test_uptrend_is_profitable_for_trend_following_combo():
@@ -31,10 +41,11 @@ def test_run_selection_ranks_and_covers_all_combos():
     results = ComboBacktester().run_selection(price_map)
 
     assert len(results) == 15
-    # Sorted best-first by average return.
-    returns = [row["avg_return_pct"] for row in results]
-    assert returns == sorted(returns, reverse=True)
+    # Sorted best-first by average Sharpe.
+    sharpes = [row["avg_sharpe"] for row in results]
+    assert sharpes == sorted(sharpes, reverse=True)
     assert all(row["symbols_tested"] == 2 for row in results)
+    assert all({"avg_sharpe", "worst_drawdown_pct"} <= set(row) for row in results)
 
 
 def test_series_shorter_than_warmup_returns_zero_trades():

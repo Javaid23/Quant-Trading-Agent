@@ -66,16 +66,16 @@ class ComboBacktester:
         wins = 0
         position = 0
         entry_price = 0.0
-        # Accumulate each trade's percentage move so results are position-size independent and
-        # directly comparable across tickers of very different prices.
-        cum_return_pct = 0.0
+        # Collect each trade's percentage move so results are position-size independent and directly
+        # comparable across tickers of very different prices, and so we can derive Sharpe / drawdown.
+        trade_returns: list[float] = []
         n = len(closes)
 
         def record(exit_price: float) -> None:
-            nonlocal trades, wins, cum_return_pct
+            nonlocal trades, wins
             if entry_price > 0:
                 trade_ret = (exit_price - entry_price) / entry_price * position * 100.0
-                cum_return_pct += trade_ret
+                trade_returns.append(trade_ret)
                 trades += 1
                 wins += 1 if trade_ret > 0 else 0
 
@@ -93,43 +93,77 @@ class ComboBacktester:
             record(float(closes.iloc[-1]))
 
         win_rate = (wins / trades) if trades else 0.0
+        cum_return_pct = float(np.sum(trade_returns)) if trade_returns else 0.0
+
+        # Risk-adjusted return: mean per-trade return over its volatility, scaled by sqrt(#trades).
+        if len(trade_returns) >= 2:
+            arr = np.asarray(trade_returns, dtype=float)
+            std = float(arr.std(ddof=1))
+            sharpe = float(arr.mean() / std * np.sqrt(len(arr))) if std > 1e-9 else 0.0
+        else:
+            sharpe = 0.0
+
+        # Max drawdown of the cumulative-return equity curve (in percentage points).
+        curve = np.concatenate([[0.0], np.cumsum(trade_returns)]) if trade_returns else np.array([0.0])
+        peak = np.maximum.accumulate(curve)
+        max_drawdown = float((curve - peak).min())
+
         final_equity = self.initial_cash * (1 + cum_return_pct / 100.0)
         return {
             "total_trades": int(trades),
             "win_rate": float(win_rate),
-            "final_equity": float(final_equity),
+            "final_equity": round(float(final_equity), 2),
             "total_return_pct": float(cum_return_pct),
+            "sharpe": round(sharpe, 2),
+            "max_drawdown_pct": round(max_drawdown, 2),
         }
 
-    def run_combo(self, closes: Sequence[float] | pd.Series, combo: Sequence[str]) -> Dict[str, float | int]:
+    def run_combo(
+        self, closes: Sequence[float] | pd.Series, combo: Sequence[str], oos_from: float | None = None
+    ) -> Dict[str, float | int]:
         series = pd.Series(closes, dtype=float).reset_index(drop=True)
         if len(series) <= self.warmup:
-            return {"total_trades": 0, "win_rate": 0.0, "final_equity": self.initial_cash, "total_return_pct": 0.0}
+            return {"total_trades": 0, "win_rate": 0.0, "final_equity": self.initial_cash, "total_return_pct": 0.0, "sharpe": 0.0, "max_drawdown_pct": 0.0}
         scores = _component_scores(series)
         signals = self._combo_signals(scores, combo)
+        if oos_from is not None:
+            # Out-of-sample: indicators are warmed on the whole series, but only trades placed in the
+            # last (1 - oos_from) of the data count -- i.e. on data the strategy was not "chosen" on.
+            cut = max(int(len(series) * float(oos_from)), self.warmup)
+            signals[:cut] = 0
         return self._simulate(signals, series)
 
     @staticmethod
     def all_combos() -> List[tuple[str, ...]]:
         return [combo for size in range(1, len(INDICATORS) + 1) for combo in combinations(INDICATORS, size)]
 
-    def run_selection(self, price_map: Mapping[str, Sequence[float] | pd.Series]) -> List[Dict[str, object]]:
-        """Run every indicator combination across all symbols and return them ranked best-first."""
+    def run_selection(
+        self, price_map: Mapping[str, Sequence[float] | pd.Series], oos_from: float | None = None
+    ) -> List[Dict[str, object]]:
+        """Run every indicator combination across all symbols and return them ranked best-first.
+
+        Pass oos_from (e.g. 0.7) to evaluate only out-of-sample trades placed in the final portion of
+        each series, which is the honest way to report performance the strategy was not fitted on.
+        """
         results: List[Dict[str, object]] = []
         for combo in self.all_combos():
-            per_symbol = [self.run_combo(closes, combo) for closes in price_map.values()]
+            per_symbol = [self.run_combo(closes, combo, oos_from=oos_from) for closes in price_map.values()]
             count = len(per_symbol) or 1
             avg_return = sum(m["total_return_pct"] for m in per_symbol) / count
             avg_win_rate = sum(m["win_rate"] for m in per_symbol) / count
+            avg_sharpe = sum(m.get("sharpe", 0.0) for m in per_symbol) / count
+            worst_drawdown = min((m.get("max_drawdown_pct", 0.0) for m in per_symbol), default=0.0)
             total_trades = sum(m["total_trades"] for m in per_symbol)
             results.append({
                 "combo": "+".join(combo),
                 "indicators": list(combo),
                 "avg_return_pct": round(avg_return, 2),
                 "avg_win_rate": round(avg_win_rate, 3),
+                "avg_sharpe": round(avg_sharpe, 2),
+                "worst_drawdown_pct": round(worst_drawdown, 2),
                 "total_trades": int(total_trades),
                 "symbols_tested": len(price_map),
             })
 
-        results.sort(key=lambda row: (row["avg_return_pct"], row["avg_win_rate"]), reverse=True)
+        results.sort(key=lambda row: (row["avg_sharpe"], row["avg_return_pct"]), reverse=True)
         return results

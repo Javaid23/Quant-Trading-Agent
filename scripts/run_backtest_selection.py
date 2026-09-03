@@ -41,44 +41,60 @@ def build_price_map(symbols: list[str]) -> dict[str, list[float]]:
     return price_map
 
 
-def write_report(results: list[dict], symbols: list[str], bars: int) -> Path:
+def _table(results: list[dict]) -> list[str]:
+    lines = ["| Rank | Combination | Avg return % | Sharpe | Worst DD % | Win rate | Trades |",
+             "| ---: | --- | ---: | ---: | ---: | ---: | ---: |"]
+    for rank, row in enumerate(results, start=1):
+        lines.append(
+            f"| {rank} | `{row['combo']}` | {row['avg_return_pct']} | {row['avg_sharpe']} | "
+            f"{row['worst_drawdown_pct']} | {row['avg_win_rate'] * 100:.1f}% | {row['total_trades']} |"
+        )
+    return lines
+
+
+def write_report(results: list[dict], oos_results: list[dict], symbols: list[str], bars: int) -> Path:
     report_path = Path(__file__).resolve().parents[1] / "demo" / "backtest_results.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     winner = results[0] if results else None
+    oos_winner = oos_results[0] if oos_results else None
     lines: list[str] = []
     lines.append("# Indicator Combination Backtest")
     lines.append("")
     lines.append(
         f"We tested **all {len(results)} combinations** of our four indicators "
         "(RSI, MACD, Bollinger Bands, moving-average crossover) on **"
-        f"{len(symbols)} tickers** using the most recent ~{bars} daily bars each. "
-        "Each combination trades the same directional model the live agent uses "
-        "(long on bullish, short on bearish, flat on neutral)."
+        f"{len(symbols)} tickers** using the most recent ~{bars} daily bars each, and validated the "
+        "winner **out-of-sample** on a 70/30 chronological split (indicators warmed on the first 70%, "
+        "performance measured only on the unseen last 30%). Combinations are ranked by Sharpe."
     )
     lines.append("")
+    if oos_winner:
+        lines.append(
+            f"**Headline (out-of-sample): `{oos_winner['combo']}` — Sharpe {oos_winner['avg_sharpe']}, "
+            f"worst drawdown {oos_winner['worst_drawdown_pct']}%, avg return {oos_winner['avg_return_pct']}% "
+            f"per ticker over {oos_winner['total_trades']} unseen-period trades.**"
+        )
+        lines.append("")
     if winner:
         lines.append(
-            f"**Best combination: `{winner['combo']}`** — "
-            f"average return {winner['avg_return_pct']}% per ticker, "
-            f"average win rate {winner['avg_win_rate'] * 100:.1f}%, "
-            f"{winner['total_trades']} trades across the basket."
+            f"In-sample best: `{winner['combo']}` — Sharpe {winner['avg_sharpe']}, "
+            f"return {winner['avg_return_pct']}%, win rate {winner['avg_win_rate'] * 100:.1f}%."
         )
         lines.append("")
     lines.append(f"Tickers: {', '.join(symbols)}")
     lines.append("")
-    lines.append("| Rank | Combination | Avg return % | Avg win rate | Trades |")
-    lines.append("| ---: | --- | ---: | ---: | ---: |")
-    for rank, row in enumerate(results, start=1):
-        lines.append(
-            f"| {rank} | `{row['combo']}` | {row['avg_return_pct']} | "
-            f"{row['avg_win_rate'] * 100:.1f}% | {row['total_trades']} |"
-        )
+    lines.append("## Out-of-sample (last 30%, unseen)")
+    lines.extend(_table(oos_results))
+    lines.append("")
+    lines.append("## In-sample (full window)")
+    lines.extend(_table(results))
     lines.append("")
     lines.append(
-        "_Return is measured on the underlying directional move (the indicator edge), not option "
-        "premium P&L, so combinations are compared on signal quality alone. Results depend on the "
-        "sample window and are for research/paper-trading purposes only._"
+        "_Return is the cumulative per-trade move on the underlying (the indicator edge), not option "
+        "premium P&L, so combinations are compared on signal quality alone. Sharpe is per-trade "
+        "risk-adjusted return. Results depend on the sample window and are for research/paper-trading "
+        "purposes only._"
     )
     lines.append("")
 
@@ -93,17 +109,19 @@ def main() -> int:
         print("No price data available; aborting.")
         return 1
 
-    results = ComboBacktester().run_selection(price_map)
+    backtester = ComboBacktester()
+    results = backtester.run_selection(price_map)
+    oos_results = backtester.run_selection(price_map, oos_from=0.7)
 
-    print("\nRanked indicator combinations (best first):")
-    print(f"{'Rank':>4}  {'Combination':<28}  {'AvgRet%':>8}  {'WinRate':>8}  {'Trades':>6}")
-    for rank, row in enumerate(results, start=1):
+    print("\nOut-of-sample ranking (best Sharpe first):")
+    print(f"{'Rank':>4}  {'Combination':<28}  {'Sharpe':>7}  {'AvgRet%':>8}  {'WorstDD':>8}  {'Trades':>6}")
+    for rank, row in enumerate(oos_results, start=1):
         print(
-            f"{rank:>4}  {row['combo']:<28}  {row['avg_return_pct']:>8}  "
-            f"{row['avg_win_rate'] * 100:>7.1f}%  {row['total_trades']:>6}"
+            f"{rank:>4}  {row['combo']:<28}  {row['avg_sharpe']:>7}  {row['avg_return_pct']:>8}  "
+            f"{row['worst_drawdown_pct']:>8}  {row['total_trades']:>6}"
         )
 
-    report_path = write_report(results, list(price_map.keys()), LOOKBACK_BARS)
+    report_path = write_report(results, oos_results, list(price_map.keys()), LOOKBACK_BARS)
     print(f"\nWrote report to {report_path}")
     return 0
 
