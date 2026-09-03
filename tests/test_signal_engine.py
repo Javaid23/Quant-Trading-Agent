@@ -26,3 +26,11 @@ def test_signal_engine_generates_bullish_or_bearish_signal():
     assert signal["signal"] in {"bullish", "bearish", "neutral"}
     assert signal["score"] >= -100
     assert signal["score"] <= 100
+
+
+def test_signal_engine_flags_flat_or_short_series_as_no_data():
+    flat = pd.DataFrame({"close": [100.0] * 5, "volume": [200] * 5})
+    short = pd.DataFrame({"close": [100.0, 100.0, 100.0, 100.0], "volume": [200] * 4})
+
+    assert SignalEngine().generate_signal(flat)["signal"] == "no_data"
+    assert SignalEngine().generate_signal(short)["signal"] == "no_data"

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -8,7 +9,7 @@ from agent.entry.indicators import calculate_bollinger_bands, calculate_macd, ca
 from agent.entry.market_data_agent import MarketDataAgent
 from agent.entry.signal_engine import SignalEngine
 from agent.orchestrator import Orchestrator
-from mcp.alpaca_mcp_client import AlpacaMCPClient
+from alpaca_mcp_wrapper.alpaca_mcp_client import AlpacaMCPClient
 
 
 def get_trade_history_path() -> Path:
@@ -72,71 +73,103 @@ st.markdown(
     """
     <style>
     .main {
-        background: linear-gradient(180deg, #020817 0%, #0b1220 50%, #111827 100%);
+        background: linear-gradient(180deg, #020817 0%, #0b1220 48%, #111827 100%);
         color: #f8fafc;
     }
     .block-container {
         padding-top: 2rem;
         padding-bottom: 3rem;
+        max-width: 1480px;
     }
     * {
         box-sizing: border-box;
     }
     .topbar {
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.94));
+        border: 1px solid rgba(148, 163, 184, 0.14);
         border-radius: 18px;
-        padding: 1rem 1.25rem;
+        padding: 1.1rem 1.3rem;
         margin-bottom: 1rem;
-        box-shadow: 0 10px 30px rgba(2, 6, 23, 0.22);
+        box-shadow: 0 16px 32px rgba(2, 6, 23, 0.24);
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
     }
     .title-line {
-        font-size: 2.2rem;
-        font-weight: 800;
-        letter-spacing: -0.04em;
+        font-size: clamp(2rem, 3.1vw, 3rem);
+        font-weight: 900;
+        letter-spacing: -0.06em;
+        line-height: 1.05;
         color: #f8fafc;
+        text-shadow: 0 0 18px rgba(59, 130, 246, 0.18);
     }
     .subtitle-line {
         color: #cbd5e1;
         font-size: 0.95rem;
-        margin-top: 0.25rem;
+        margin-top: 0.1rem;
+        opacity: 0.9;
     }
     .status-pill {
         display: inline-block;
-        padding: 0.38rem 0.8rem;
+        padding: 0.42rem 0.82rem;
         border-radius: 999px;
-        font-size: 0.72rem;
+        font-size: 0.7rem;
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
     }
     .market-status-box {
-        background: rgba(15, 23, 42, 0.8);
+        background: rgba(15, 23, 42, 0.9);
         border: 1px solid rgba(148, 163, 184, 0.18);
         border-radius: 16px;
-        padding: 0.75rem 0.9rem;
+        padding: 0.85rem 0.9rem;
+        margin-bottom: 1rem;
+        box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.08);
+    }
+    .sidebar-panel {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 16px;
+        padding: 0.8rem 0.9rem;
         margin-bottom: 0.9rem;
     }
+    .sidebar-label {
+        color: #94a3b8;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.5rem;
+        display: inline-block;
+    }
+    .watchlist-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+    }
+    .watchlist-chip {
+        width: 100%;
+    }
     .metric-card {
-        background: rgba(15, 23, 42, 0.8);
+        background: rgba(15, 23, 42, 0.82);
         border: 1px solid rgba(148, 163, 184, 0.16);
         border-radius: 18px;
         padding: 1rem 1.1rem;
-        min-height: 140px;
+        min-height: 150px;
         height: 100%;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.22);
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
     }
     .metric-label {
         color: #94a3b8;
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
     }
     .metric-value {
-        font-size: 2rem;
+        font-size: clamp(1.35rem, 2vw, 2.1rem);
         font-weight: 800;
         margin-top: 0.45rem;
         color: #f8fafc;
@@ -144,21 +177,21 @@ st.markdown(
     }
     .metric-sub {
         color: #cbd5e1;
-        font-size: 0.86rem;
+        font-size: 0.85rem;
         margin-top: 0.25rem;
     }
     .panel {
         background: rgba(15, 23, 42, 0.82);
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(148, 163, 184, 0.14);
         border-radius: 18px;
         padding: 1rem 1.1rem;
-        box-shadow: 0 12px 28px rgba(2, 6, 23, 0.24);
+        box-shadow: 0 12px 28px rgba(2, 6, 23, 0.22);
         min-height: 180px;
         border-left: 3px solid rgba(96, 165, 250, 0.8);
     }
     .panel-header {
         color: #e2e8f0;
-        font-size: 1.08rem;
+        font-size: 1.05rem;
         font-weight: 700;
         margin-bottom: 0.7rem;
         letter-spacing: 0.02em;
@@ -183,11 +216,12 @@ st.markdown(
         display: flex;
         flex-direction: column;
         justify-content: center;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
     .signal-word {
         font-size: 1.7rem;
         font-weight: 800;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.14em;
         text-transform: uppercase;
     }
     .gauge-wrap {
@@ -208,17 +242,23 @@ st.markdown(
         transition: width 0.25s ease;
     }
     .stButton > button {
-        border: 1px solid rgba(148, 163, 184, 0.18);
+        border: 1px solid rgba(148, 163, 184, 0.16);
         border-radius: 12px;
         font-weight: 700;
         height: 3rem;
         width: 100%;
         color: white;
+        background: linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.94));
         transition: all 0.2s ease;
+        box-shadow: 0 10px 18px rgba(15, 23, 42, 0.18);
     }
     .stButton > button:hover {
         transform: translateY(-1px);
-        filter: brightness(1.04);
+        filter: brightness(1.05);
+    }
+    .stButton > button[kind="primary"], .stButton > button:focus:not(:active) {
+        background: linear-gradient(180deg, #ef4444, #dc2626);
+        border-color: rgba(254, 202, 202, 0.4);
     }
     div[data-testid="stMetricValue"] {
         font-size: 2rem;
@@ -226,9 +266,23 @@ st.markdown(
     }
     [data-testid="stSidebar"] {
         background: rgba(2, 6, 23, 0.82);
+        border-right: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 1rem;
+    }
+    .stSelectbox > div > div,
+    .stTextInput > div > div,
+    .stDataFrame {
+        border-radius: 12px !important;
     }
     .stProgress > div > div {
         background: linear-gradient(90deg, #38bdf8, #22c55e);
+    }
+    .stDataFrame > div {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        border-radius: 12px;
     }
     </style>
     """,
@@ -241,16 +295,18 @@ if "orchestrator" not in st.session_state:
 st.markdown(
     """
     <div class="topbar">
-        <div class="title-line">Autonomous Options Intelligence</div>
-        <div class="subtitle-line">Real-time paper trading signal engine with portfolio risk monitoring</div>
+        <div class="title-line">Quant Trading Agent</div>
+        <div class="subtitle-line">Autonomous options intelligence • paper trading signal engine • portfolio risk monitoring</div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 with st.sidebar:
-    st.header("Market control")
-    st.caption("Paper account risk monitoring")
+    st.markdown(
+        '<div class="sidebar-panel"><div class="sidebar-label">Portfolio control</div><h3 style="margin:0; color:#f8fafc; font-size:1.25rem;">Market control</h3></div>',
+        unsafe_allow_html=True,
+    )
 
     market_status_text = "Checking market..."
     market_status_color = "rgba(148, 163, 184, 0.18)"
@@ -278,8 +334,9 @@ with st.sidebar:
     elif market_status_label == "Open":
         status_description = "Market is currently open"
 
+    next_open_html = f'<div style="color:#cbd5e1; font-size:0.76rem; margin-top:0.25rem;">{next_open_text}</div>' if next_open_text else ""
     st.markdown(
-        f'<div class="market-status-box"><div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:#94a3b8;">Market status</div><div class="status-pill" style="background:{market_status_color}; color:{market_label_color}; margin-top:0.5rem;">{market_status_label}</div><div style="color:#cbd5e1; font-size:0.82rem; margin-top:0.55rem;">{status_description}</div>{f"<div style=\"color:#cbd5e1; font-size:0.76rem; margin-top:0.25rem;\">{next_open_text}</div>" if next_open_text else ""}</div>',
+        f'<div class="market-status-box"><div class="sidebar-label">Market status</div><div class="status-pill" style="background:{market_status_color}; color:{market_label_color}; margin-top:0.5rem;">{market_status_label}</div><div style="color:#cbd5e1; font-size:0.82rem; margin-top:0.55rem;">{status_description}</div>{next_open_html}</div>',
         unsafe_allow_html=True,
     )
 
@@ -288,51 +345,39 @@ with st.sidebar:
         "PLTR", "BRK.B", "IBM", "UBER", "DIS", "SHOP", "NKE", "COST"
     ]
 
-    st.caption("Quick watchlist")
-    watchlist_cols = st.columns(4)
-    for idx, ticker in enumerate(ticker_options[:8]):
-        with watchlist_cols[idx % 4]:
-            if st.button(ticker, key=f"watch_{ticker}", help=f"Load {ticker} into the analyzer"):
-                st.session_state["selected_ticker"] = ticker
-
-    ticker_query = st.text_input("Ticker search", value=st.session_state.get("selected_ticker", "AAPL"))
-    filtered_tickers = [t for t in ticker_options if ticker_query.upper() in t.upper() or not ticker_query.strip()]
-    if filtered_tickers:
-        selected_ticker = st.selectbox(
-            "Matching symbols",
-            filtered_tickers,
-            index=filtered_tickers.index(ticker_query.upper()) if ticker_query.upper() in filtered_tickers else 0,
-        )
-    else:
-        selected_ticker = st.selectbox("Matching symbols", [ticker_query.upper() or "AAPL"], index=0)
-
-    symbol = selected_ticker.upper()
+    st.markdown('<div class="sidebar-panel"><div class="sidebar-label">Ticker selection</div>', unsafe_allow_html=True)
+    ticker_query = st.text_input(
+        "Search ticker",
+        value=st.session_state.get("ticker_query", ""),
+        placeholder="Type to filter symbols",
+        key="ticker_search_input",
+    )
+    filtered_tickers = [ticker for ticker in ticker_options if not ticker_query or ticker.lower().startswith(ticker_query.lower()) or ticker.lower().find(ticker_query.lower()) != -1]
+    if not filtered_tickers:
+        filtered_tickers = ticker_options
+    selected_ticker = st.selectbox(
+        "Choose ticker",
+        options=filtered_tickers,
+        index=0 if filtered_tickers and filtered_tickers[0] != st.session_state.get("selected_ticker", "AAPL") else filtered_tickers.index(st.session_state.get("selected_ticker", "AAPL")) if st.session_state.get("selected_ticker", "AAPL") in filtered_tickers else 0,
+        key="ticker_selector",
+    )
+    symbol = str(selected_ticker).upper()
     st.session_state["selected_ticker"] = symbol
+    st.session_state["ticker_query"] = ticker_query
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="sidebar-panel"><div class="sidebar-label">Quick watchlist</div>', unsafe_allow_html=True)
+    watchlist = ticker_options[:8]
+    for idx in range(0, len(watchlist), 2):
+        cols = st.columns(2)
+        for col_idx, ticker in enumerate(watchlist[idx:idx + 2]):
+            with cols[col_idx]:
+                if st.button(ticker, key=f"watch_{ticker}", help=f"Load {ticker}", use_container_width=True):
+                    st.session_state["selected_ticker"] = ticker
+    st.markdown('</div>', unsafe_allow_html=True)
+
     analyze = st.button("Analyze signal", use_container_width=True, key="analyze_signal_button")
     execute_trade = st.button("Execute trade", use_container_width=True, key="execute_trade_button", type="primary")
-
-    st.markdown("---")
-    st.subheader("System mode")
-    st.markdown('<div class="status-pill" style="background: rgba(34, 197, 94, 0.14); color: #4ade80;">Entry + Defense</div>', unsafe_allow_html=True)
-    st.caption("Deterministic signal engine and hedging logic")
-
-    st.markdown("---")
-    try:
-        account = AlpacaMCPClient().get_account()
-        st.subheader("Paper account")
-        st.markdown(
-            f"""
-            <div class="account-box">
-                <div style="color: #cbd5e1; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.08em;">Status</div>
-                <div style="color: #4ade80; font-size: 1.1rem; font-weight: 700; margin-top: 0.2rem;">{account['status']}</div>
-                <div style="margin-top: 0.8rem; color: #e2e8f0; font-size: 0.88rem;">Cash: ${account['cash']:,.2f}</div>
-                <div style="color: #e2e8f0; font-size: 0.88rem;">Buying power: ${account['buying_power']:,.2f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    except Exception:
-        st.caption("Account snapshot unavailable")
 
 result = None
 if analyze:
@@ -502,16 +547,19 @@ if result is not None:
 
 st.markdown("---")
 st.markdown('<div class="panel-header">Historical View</div>', unsafe_allow_html=True)
-historical_symbol = st.text_input("Historical ticker", value=st.session_state.get("selected_ticker", "AAPL"), key="historical_ticker")
+historical_symbol = st.session_state.get("selected_ticker", "AAPL")
+st.caption(f"Showing data for {historical_symbol.upper()} using the active sidebar selection.")
 lookback = st.selectbox("Lookback period", ["1M", "3M", "6M", "1Y"], index=2)
 lookback_map = {"1M": 30, "3M": 90, "6M": 180, "1Y": 260}
 window_days = lookback_map.get(lookback, 180)
 
 try:
     historical_bars = MarketDataAgent().get_bars(historical_symbol.strip() or "AAPL", limit=window_days, timeframe="1Day")
+    print(f"HISTORICAL_FETCH symbol={historical_symbol.strip() or 'AAPL'} rows={len(historical_bars)}")
     if historical_bars.empty:
         st.caption("No historical bars available for the selected ticker.")
     else:
+        st.caption(f"Loaded {len(historical_bars)} daily bars for {historical_symbol.strip() or 'AAPL'}.")
         historical_bars = historical_bars.copy()
         historical_bars["timestamp"] = pd.to_datetime(historical_bars["timestamp"])
         historical_bars = historical_bars.sort_values("timestamp").reset_index(drop=True)
@@ -525,21 +573,74 @@ try:
         ma = moving_average_crossover(historical_bars["close"].astype(float), 3, 5)
 
         price_overlay = pd.DataFrame({
+            "date": historical_bars.index,
             "Close": historical_bars["close"].astype(float),
             "Fast MA": pd.Series(ma["fast_ma"], index=historical_bars.index),
             "Slow MA": pd.Series(ma["slow_ma"], index=historical_bars.index),
             "Upper Band": pd.Series(bollinger["upper"], index=historical_bars.index),
             "Middle Band": pd.Series(bollinger["middle"], index=historical_bars.index),
             "Lower Band": pd.Series(bollinger["lower"], index=historical_bars.index),
-        })
-        st.line_chart(price_overlay)
+        }).reset_index(drop=True)
 
-        indicator_panel = pd.DataFrame({
+        price_chart = (
+            alt.Chart(price_overlay)
+            .mark_line(color="#7dd3fc", strokeWidth=2.5)
+            .encode(
+                x=alt.X("date:T", axis=alt.Axis(format="%b %d", labelOverlap="greedy", title="Date")),
+                y=alt.Y("Close:Q", title="Price", scale=alt.Scale(zero=False)),
+            )
+        )
+        fast_ma = (
+            alt.Chart(price_overlay)
+            .mark_line(color="#facc15", strokeWidth=1.5)
+            .encode(x="date:T", y=alt.Y("Fast MA:Q", scale=alt.Scale(zero=False)))
+        )
+        slow_ma = (
+            alt.Chart(price_overlay)
+            .mark_line(color="#a78bfa", strokeWidth=1.5)
+            .encode(x="date:T", y=alt.Y("Slow MA:Q", scale=alt.Scale(zero=False)))
+        )
+        band_fill = (
+            alt.Chart(price_overlay)
+            .mark_area(opacity=0.12, color="#22c55e")
+            .encode(x="date:T", y="Upper Band:Q", y2="Lower Band:Q")
+        )
+        st.altair_chart((band_fill + price_chart + fast_ma + slow_ma).properties(height=360), use_container_width=True)
+
+        indicator_df = pd.DataFrame({
+            "date": historical_bars.index,
             "RSI": rsi,
             "MACD": macd_series,
             "Signal Line": signal_series,
-        })
-        st.line_chart(indicator_panel)
+        }).reset_index(drop=True)
+
+        rsi_chart = (
+            alt.Chart(indicator_df)
+            .mark_line(color="#f59e0b", strokeWidth=2)
+            .encode(
+                x=alt.X("date:T", axis=alt.Axis(format="%b %d", labelOverlap="greedy", title="Date")),
+                y=alt.Y("RSI:Q", title="RSI", scale=alt.Scale(domain=(0, 100))),
+            )
+            .properties(height=220)
+        )
+        macd_chart = (
+            alt.Chart(indicator_df)
+            .mark_line(color="#34d399", strokeWidth=2)
+            .encode(
+                x=alt.X("date:T", axis=alt.Axis(format="%b %d", labelOverlap="greedy", title="Date")),
+                y=alt.Y("MACD:Q", title="MACD"),
+            )
+            .properties(height=220)
+        )
+
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.caption("Price action")
+            st.altair_chart((band_fill + price_chart + fast_ma + slow_ma).properties(height=360), use_container_width=True)
+        with col_right:
+            st.caption("Momentum indicators")
+            st.altair_chart(rsi_chart, use_container_width=True)
+            st.altair_chart(macd_chart, use_container_width=True)
 
         signal_history = []
         engine = SignalEngine()

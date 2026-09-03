@@ -1,8 +1,10 @@
+import datetime as dt
 import os
 from typing import Dict, Any, List
 
 import pandas as pd
 from dotenv import load_dotenv
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestQuoteRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -53,10 +55,20 @@ class MarketDataAgent:
 
     def get_bars(self, symbol: str, limit: int = 100, timeframe: str = "1Day") -> pd.DataFrame:
         tf = self._to_timeframe(timeframe)
+        symbol = (symbol or "").upper().strip()
+        if not symbol:
+            return self._empty_bars_df(limit)
+
+        end_dt = dt.datetime.now(dt.timezone.utc)
+        start_dt = end_dt - dt.timedelta(days=max(int(limit), 30))
+
         request = StockBarsRequest(
             symbol_or_symbols=[symbol],
             timeframe=tf,
+            start=start_dt,
+            end=end_dt,
             limit=limit,
+            feed=DataFeed.IEX,
         )
         response = self.client.get_stock_bars(request)
 
@@ -79,28 +91,33 @@ class MarketDataAgent:
 
         rows = []
         for bar in bars:
+            if hasattr(bar, "model_dump"):
+                payload = bar.model_dump()
+            elif isinstance(bar, dict):
+                payload = bar
+            else:
+                payload = {}
+
+            ts = getattr(bar, "timestamp", payload.get("timestamp", getattr(bar, "t", pd.Timestamp.utcnow())))
+            open_val = getattr(bar, "open", payload.get("open", getattr(bar, "o", 0.0)))
+            high_val = getattr(bar, "high", payload.get("high", getattr(bar, "h", 0.0)))
+            low_val = getattr(bar, "low", payload.get("low", getattr(bar, "l", 0.0)))
+            close_val = getattr(bar, "close", payload.get("close", getattr(bar, "c", 0.0)))
+            volume_val = getattr(bar, "volume", payload.get("volume", getattr(bar, "v", 0)))
+
             rows.append({
-                "timestamp": getattr(bar, "t", pd.Timestamp.utcnow()),
-                "open": float(getattr(bar, "o", 0.0)),
-                "high": float(getattr(bar, "h", 0.0)),
-                "low": float(getattr(bar, "l", 0.0)),
-                "close": float(getattr(bar, "c", 0.0)),
-                "volume": int(getattr(bar, "v", 0)),
+                "timestamp": ts,
+                "open": float(open_val),
+                "high": float(high_val),
+                "low": float(low_val),
+                "close": float(close_val),
+                "volume": int(volume_val),
             })
         return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
 
     @staticmethod
     def _empty_bars_df(limit: int) -> pd.DataFrame:
-        timestamps = pd.date_range(end=pd.Timestamp.now(tz="UTC"), periods=limit, freq="D")
-        base = pd.DataFrame({
-            "timestamp": timestamps,
-            "open": [100.0] * limit,
-            "high": [100.0] * limit,
-            "low": [100.0] * limit,
-            "close": [100.0] * limit,
-            "volume": [0] * limit,
-        })
-        return base.sort_values("timestamp").reset_index(drop=True)
+        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
 
     @staticmethod
     def _to_timeframe(timeframe: str):

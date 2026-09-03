@@ -51,3 +51,8 @@ Many retail trading tools are either too opaque or too simplistic. This project 
 ## Demo narrative
 
 This system is designed to feel like an AI-powered trading desk assistant: it reads market data, identifies a directional edge, checks the risk posture, and explains the trade decision before execution. That makes it easier to demonstrate in front of judges and easier to explain to non-technical stakeholders.
+
+## Roadmap & Current Limitations
+
+- Legacy stale positions from the pre-fix pricing bug are explicitly excluded from live risk scoring so they do not distort the current drawdown and delta exposure calculations.
+- Strike/expiration selection occasionally chooses a contract that isn't listed in Alpaca's live option chain for certain tickers (observed with AMD, SPY, JPM, and XOM), resulting in an 'asset not found' rejection at order submission. This doesn't affect the core selection logic, which correctly targets near-the-money strikes when the chosen contract exists, it's an edge case in the interval/expiration matching for specific option chains that would be resolved by validating the selected symbol against the live chain before submission, rather than after.

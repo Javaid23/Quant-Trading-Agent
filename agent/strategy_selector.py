@@ -158,24 +158,55 @@ class StrategySelector:
             "option_symbol": option_symbol,
         }
 
-    def select_hedge_strategy(self, risk_score: float, position_direction: str) -> Dict[str, str]:
+    def select_hedge_strategy(
+        self,
+        risk_score: float,
+        position_direction: str,
+        symbol: Optional[str] = None,
+        current_price: float | None = None,
+    ) -> Dict[str, Any]:
         risk_score = float(risk_score)
         direction = (position_direction or "neutral").lower()
+        symbol = (symbol or "").upper().strip()
 
         if risk_score >= 70:
             strategy = "exit"
+            option_type = "none"
+            option_symbol = None
             reason = "Risk score is too high; exiting to protect capital."
         elif risk_score >= 45:
-            strategy = "protective_put" if direction == "long" else "covered_call"
-            reason = "Medium risk detected; hedging exposure with a defensive option structure."
+            if direction == "long":
+                strategy = "protective_put"
+                option_type = "put"
+                option_symbol = self.get_option_symbol_for_signal(symbol, option_type, current_price=current_price) if symbol else None
+                reason = "Medium risk detected; hedging exposure with a protective put."
+            else:
+                strategy = "covered_call"
+                option_type = "call"
+                option_symbol = self.get_option_symbol_for_signal(symbol, option_type, current_price=current_price) if symbol else None
+                reason = "Medium risk detected; hedging exposure with a covered call."
         elif risk_score >= 25:
-            strategy = "collar" if direction == "long" else "covered_call"
-            reason = "Moderate risk; tightening the position with a partial hedge."
+            # Collar is a two-leg strategy and is not safely executable in this single-leg execution layer.
+            # For now we keep the position open rather than pretending to submit a full collar order.
+            if direction == "long":
+                strategy = "hold"
+                option_type = "none"
+                option_symbol = None
+                reason = "Moderate risk; collar is a two-leg hedge and is not safely implemented in this single-leg execution layer. Holding for now."
+            else:
+                strategy = "covered_call"
+                option_type = "call"
+                option_symbol = self.get_option_symbol_for_signal(symbol, option_type, current_price=current_price) if symbol else None
+                reason = "Moderate risk; adding a single-leg hedge to offset the short exposure."
         else:
             strategy = "hold"
+            option_type = "none"
+            option_symbol = None
             reason = "Risk remains within normal thresholds."
 
         return {
             "strategy": strategy,
+            "option_type": option_type,
+            "option_symbol": option_symbol,
             "reason": reason,
         }

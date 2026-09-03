@@ -18,10 +18,28 @@ class SignalEngine:
         self.macd_signal = 9
 
     def generate_signal(self, data: pd.DataFrame) -> Dict[str, float | str]:
-        if data.empty or "close" not in data.columns:
-            return {"signal": "neutral", "score": 0.0, "reason": "No close data available"}
+        if data is None:
+            return {"signal": "no_data", "score": 0.0, "reason": "No market data available for this symbol."}
 
-        closes = data["close"].astype(float)
+        if not isinstance(data, pd.DataFrame):
+            try:
+                data = pd.DataFrame(data)
+            except Exception:
+                return {"signal": "no_data", "score": 0.0, "reason": "No market data available for this symbol."}
+
+        if data.empty or "close" not in data.columns:
+            return {"signal": "no_data", "score": 0.0, "reason": "No market data available for this symbol."}
+
+        closes = pd.to_numeric(data["close"], errors="coerce").dropna()
+        if closes.empty:
+            return {"signal": "no_data", "score": 0.0, "reason": "No market data available for this symbol; no valid close values were returned."}
+
+        if len(closes) < 5:
+            return {"signal": "no_data", "score": 0.0, "reason": "No market data available for this symbol; too few valid bars to compute a signal."}
+
+        if closes.nunique() <= 1:
+            return {"signal": "no_data", "score": 0.0, "reason": "No market data available for this symbol; close series is flat and not usable for signal generation."}
+
         rsi = calculate_rsi(closes, self.rsi_period)
         macd, signal_line, _ = calculate_macd(closes, self.macd_fast, self.macd_slow, self.macd_signal)
         bands = calculate_bollinger_bands(closes, self.bollinger_period)

@@ -13,12 +13,12 @@ class EmptyBarClient:
         return EmptyBarResponse()
 
 
-def test_market_data_agent_uses_fallback_when_response_is_empty():
+def test_market_data_agent_returns_empty_dataframe_when_response_is_empty():
     agent = MarketDataAgent.__new__(MarketDataAgent)
     agent.client = EmptyBarClient()
 
     bars = agent.get_bars("AAPL", limit=5, timeframe="1Day")
 
     assert isinstance(bars, pd.DataFrame)
-    assert len(bars) == 5
+    assert bars.empty
     assert {"close", "open", "high", "low", "volume"}.issubset(bars.columns)
