@@ -163,8 +163,10 @@ st.markdown(
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
     html, body, [class*="css"], .stMarkdown, .stMetric { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
     .main, .stApp { background: radial-gradient(1100px 520px at 20% -10%, #151b25 0%, #10151d 45%, #0c1017 100%); color: #e6e9f0; }
-    .block-container { padding-top: 1.4rem; padding-bottom: 3rem; max-width: 1560px; }
+    .block-container { padding-top: 0.6rem; padding-bottom: 3rem; max-width: 1560px; }
     #MainMenu, footer { visibility: hidden; }
+    [data-testid="stHeader"] { background: transparent; height: 0; min-height: 0; }
+    [data-testid="stToolbar"] { right: 0.5rem; top: 0.2rem; }
     .topbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.9rem;
         background: linear-gradient(135deg, #171d28, #131922); border: 1px solid rgba(148,163,184,0.12);
         border-radius: 16px; padding: 1rem 1.35rem; margin-bottom: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.28); }
