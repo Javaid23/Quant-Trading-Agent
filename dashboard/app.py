@@ -178,8 +178,9 @@ st.markdown(
         font-weight:600; letter-spacing:0.01em; border:1px solid rgba(148,163,184,0.16); color:#c7cedd; background: rgba(148,163,184,0.05); }
     .dot { width:8px; height:8px; border-radius:50%; background:#34d399; box-shadow:0 0 6px rgba(52,211,153,0.6); }
     .dot.off { background:#f6c453; box-shadow:0 0 6px rgba(246,196,83,0.55); }
+    [data-testid="stHorizontalBlock"] { align-items: stretch; }
     .kpi { background: #171d28; border:1px solid rgba(148,163,184,0.12); border-radius:14px; padding:0.9rem 1.05rem;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+        box-shadow: 0 8px 24px rgba(0,0,0,0.18); height:100%; min-height:118px; display:flex; flex-direction:column; justify-content:space-between; }
     .kpi-label { color:#8b93a7; font-size:0.72rem; font-weight:600; letter-spacing:0.03em; text-transform:uppercase; }
     .kpi-value { font-family:'JetBrains Mono', monospace; font-size: clamp(1.2rem,1.85vw,1.65rem); font-weight:700; margin-top:0.35rem; color:#f4f6fb; }
     .kpi-sub { color:#8b93a7; font-size:0.76rem; margin-top:0.25rem; }
@@ -306,15 +307,19 @@ st.markdown(
 )
 
 
-def kpi(col, label, value, sub="", color="#e9fff5"):
-    col.markdown(f'<div class="kpi"><div class="kpi-label">{label}</div><div class="kpi-value" style="color:{color}">{value}</div><div class="kpi-sub">{sub}</div></div>', unsafe_allow_html=True)
+def kpi(col, label, value, sub="", color="#f4f6fb"):
+    col.markdown(
+        f'<div class="kpi"><div class="kpi-label">{label}</div><div class="kpi-value" style="color:{color}">{value}</div>'
+        f'<div class="kpi-sub">{sub or "&nbsp;"}</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 k = st.columns(5)
 kpi(k[0], "Portfolio Value", f"${equity:,.2f}", "Alpaca paper account")
 kpi(k[1], "Open P/L", f"${open_pl:,.2f}", "Unrealized", "#34d399" if open_pl >= 0 else "#f87171")
-kpi(k[2], "Cash Reserve", f"${cash:,.2f}")
-kpi(k[3], "Buying Power", f"${buying_power:,.2f}")
+kpi(k[2], "Cash Reserve", f"${cash:,.2f}", "Settled cash")
+kpi(k[3], "Buying Power", f"${buying_power:,.2f}", "Available to trade")
 kpi(k[4], "Open Positions", f"{len(positions)}", "Market open" if is_open else "Market closed", "#34d399" if is_open else "#f59e0b")
 
 if st.session_state.get("action_msg"):
