@@ -283,8 +283,19 @@ st.markdown(
 # Recreate the orchestrator if it is missing or a stale instance from an earlier code version is cached
 # in this session (Streamlit keeps session_state across reruns, so an old build can leave a stale object).
 if "orchestrator" not in st.session_state or not hasattr(st.session_state.orchestrator, "scan_watchlist"):
-    st.session_state.orchestrator = Orchestrator()
-    st.session_state["account_loaded"] = False
+    if not os.getenv("ALPACA_API_KEY") or not os.getenv("ALPACA_SECRET_KEY"):
+        st.error(
+            "⚠️ **Alpaca credentials not configured.**\n\n"
+            "Add these in **Manage app → Settings → Secrets** (top-level, exactly as shown), then reboot:\n\n"
+            "```toml\nALPACA_API_KEY = \"your_paper_key\"\nALPACA_SECRET_KEY = \"your_paper_secret\"\n```"
+        )
+        st.stop()
+    try:
+        st.session_state.orchestrator = Orchestrator()
+        st.session_state["account_loaded"] = False
+    except Exception as exc:
+        st.error(f"Failed to initialize the trading agent: {exc}")
+        st.stop()
 
 refresh_portfolio(force=False)
 account = st.session_state.get("account")
