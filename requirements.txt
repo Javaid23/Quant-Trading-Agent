@@ -5,11 +5,11 @@ requests>=2.31.0
 python-dotenv>=1.0.0
 streamlit>=1.47.0
 altair>=5.0.0
-fastmcp>=2.0.0
+fastmcp>=3.1.0,<4
 streamlit-lightweight-charts>=0.7.0
 pytest>=8.0.0
-# Alpaca MCP server (git submodule) — installs the `alpaca-mcp-server` console script used for execution.
-# Disabled for Streamlit Cloud, which does not fetch git submodules: the dashboard falls back to the
-# Alpaca REST API for account/positions/clock, so it stays fully functional. Uncomment for local/Docker
-# installs where the submodule is present:  pip install -e ./mcp_server
-# ./mcp_server
+# Alpaca MCP server installed from GitHub (pinned to the same commit as the mcp_server submodule) so the
+# `alpaca-mcp-server` console script exists on Streamlit Cloud, which does not fetch git submodules.
+# This lets the deployed app execute through MCP (App -> MCP Client -> MCP Server -> Alpaca), with the
+# REST fallback still covering account/positions display if the subprocess is unavailable.
+alpaca-mcp-server @ git+https://github.com/alpacahq/alpaca-mcp-server.git@94a0d9a721b0e81c5c7bcd1063aaa8eeb8bed087
