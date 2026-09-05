@@ -275,6 +275,13 @@ st.markdown(
     .stTabs [data-baseweb="tab"] { background:transparent; font-size:0.86rem; font-weight:600; color:#8b93a7; }
     .stTabs [aria-selected="true"] { color:#f6c453; border-bottom:2px solid #f6c453; }
     .stDataFrame > div { background: #141a23; border:1px solid rgba(148,163,184,0.1); border-radius:12px; }
+    /* Sidebar readability: brighter, bolder ticker buttons + selectbox/input text */
+    [data-testid="stSidebar"] .stButton > button { color:#f4f6fb; font-weight:700; font-size:0.84rem; letter-spacing:0.02em; background:#1e2736; border:1px solid rgba(148,163,184,0.28); white-space:nowrap; overflow:visible; padding:0 0.4rem; }
+    [data-testid="stSidebar"] .stButton > button p { white-space:nowrap; overflow:visible; }
+    [data-testid="stSidebar"] .stButton > button:hover { border-color:#f6c453; color:#f6c453; background:#232d3f; }
+    [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stCaption, [data-testid="stSidebar"] p { color:#c7cedd !important; }
+    [data-testid="stSidebar"] [data-baseweb="select"] * { color:#f4f6fb !important; }
+    [data-testid="stSidebar"] input { color:#f4f6fb !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -317,9 +324,9 @@ with st.sidebar:
     if "ticker_select" not in st.session_state:
         st.session_state["ticker_select"] = st.session_state.get("selected_ticker", "AAPL")
     st.caption("Quick pick")
-    qcols = st.columns(4)
+    qcols = st.columns(2)
     for i, t in enumerate(QUICK_TICKERS):
-        if qcols[i % 4].button(t, key=f"pick_{t}", width="stretch"):
+        if qcols[i % 2].button(t, key=f"pick_{t}", width="stretch"):
             st.session_state["ticker_select"] = t
             st.rerun()
     current = st.session_state.get("ticker_select", "AAPL")
